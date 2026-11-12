@@ -1,0 +1,6 @@
+{
+  "name": "CA Saathi - CA Foundation Prep",
+  "description": "Modern bilingual (Hindi & English) mobile-first learning companion for CA Foundation students featuring Study Planner, Chapter MCQs, Mock Tests, Notes, and Exam Updates.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

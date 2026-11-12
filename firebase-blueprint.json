@@ -1,0 +1,271 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Student or Admin profile document",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "format": "email", "maxLength": 150 },
+        "role": { "type": "string", "enum": ["student", "admin"] },
+        "targetAttempt": { "type": "string", "maxLength": 50 },
+        "targetYear": { "type": "number" },
+        "city": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "bio": { "type": "string", "maxLength": 500 },
+        "avatar": { "type": "string", "maxLength": 20 },
+        "joinedGroupIds": { "type": "array" },
+        "privacyHideCity": { "type": "boolean" },
+        "privacyHideAttempt": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "role"]
+    },
+    "TestResult": {
+      "title": "TestResult",
+      "description": "Official mock test attempt scorecard",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "testId": { "type": "string" },
+        "testTitle": { "type": "string", "maxLength": 200 },
+        "paperId": { "type": "string" },
+        "totalQuestions": { "type": "number" },
+        "attempted": { "type": "number" },
+        "correct": { "type": "number" },
+        "incorrect": { "type": "number" },
+        "score": { "type": "number" },
+        "percentage": { "type": "number" },
+        "timeSpentSeconds": { "type": "number" },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "userId", "testId", "score"]
+    },
+    "WrongQuestion": {
+      "title": "WrongQuestion",
+      "description": "Wrong questions notebook entry",
+      "type": "object",
+      "properties": {
+        "questionId": { "type": "string" },
+        "userId": { "type": "string" },
+        "paperId": { "type": "string" },
+        "failedCount": { "type": "number" },
+        "lastAttemptDate": { "type": "string" },
+        "lastSelectedOption": { "type": "number" },
+        "cleared": { "type": "boolean" },
+        "notes": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["questionId", "userId", "paperId", "failedCount"]
+    },
+    "Bookmark": {
+      "title": "Bookmark",
+      "description": "Bookmarked question reference",
+      "type": "object",
+      "properties": {
+        "questionId": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["questionId", "userId"]
+    },
+    "StudyTask": {
+      "title": "StudyTask",
+      "description": "Daily study checklist task",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string", "maxLength": 200 },
+        "paperId": { "type": "string" },
+        "chapter": { "type": "string", "maxLength": 200 },
+        "durationMinutes": { "type": "number" },
+        "completed": { "type": "boolean" },
+        "priority": { "type": "string", "enum": ["low", "medium", "high"] },
+        "date": { "type": "string" }
+      },
+      "required": ["id", "userId", "title", "paperId", "completed"]
+    },
+    "RevisionReminder": {
+      "title": "RevisionReminder",
+      "description": "Spaced repetition revision reminder",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "paperId": { "type": "string" },
+        "chapterTitle": { "type": "string", "maxLength": 200 },
+        "intervalDays": { "type": "number" },
+        "dueDate": { "type": "string" },
+        "completed": { "type": "boolean" }
+      },
+      "required": ["id", "userId", "paperId", "chapterTitle", "intervalDays", "dueDate"]
+    },
+    "ChapterProgress": {
+      "title": "ChapterProgress",
+      "description": "Syllabus chapter mastery state",
+      "type": "object",
+      "properties": {
+        "chapterId": { "type": "string" },
+        "userId": { "type": "string" },
+        "paperId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "revising", "mastered"] },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["chapterId", "userId", "status"]
+    },
+    "CommunityPost": {
+      "title": "CommunityPost",
+      "description": "Community doubt discussion post",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "groupId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string", "maxLength": 100 },
+        "authorRole": { "type": "string", "enum": ["student", "admin"] },
+        "authorAvatar": { "type": "string", "maxLength": 20 },
+        "title": { "type": "string", "maxLength": 250 },
+        "content": { "type": "string", "maxLength": 3000 },
+        "paperId": { "type": "string" },
+        "chapterName": { "type": "string", "maxLength": 200 },
+        "tags": { "type": "array" },
+        "likes": { "type": "number" },
+        "likedBy": { "type": "array" },
+        "isPinned": { "type": "boolean" },
+        "isResolved": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "groupId", "authorId", "authorName", "title", "content"]
+    },
+    "CommunityReply": {
+      "title": "CommunityReply",
+      "description": "Reply or solution to discussion post",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "postId": { "type": "string" },
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string", "maxLength": 100 },
+        "authorRole": { "type": "string", "enum": ["student", "admin"] },
+        "authorAvatar": { "type": "string", "maxLength": 20 },
+        "content": { "type": "string", "maxLength": 2000 },
+        "likes": { "type": "number" },
+        "likedBy": { "type": "array" },
+        "isFacultySolution": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "postId", "authorId", "authorName", "content"]
+    },
+    "ModerationReport": {
+      "title": "ModerationReport",
+      "description": "Report on post, reply, or user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "targetType": { "type": "string", "enum": ["post", "reply", "user"] },
+        "targetId": { "type": "string" },
+        "targetTitle": { "type": "string", "maxLength": 250 },
+        "reportedBy": { "type": "string", "maxLength": 100 },
+        "reportedByUid": { "type": "string" },
+        "reason": { "type": "string", "maxLength": 200 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["pending", "resolved", "dismissed"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "targetType", "targetId", "reason", "status"]
+    },
+    "ExamAnnouncement": {
+      "title": "ExamAnnouncement",
+      "description": "Verified ICAI exam announcement",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string", "maxLength": 250 },
+        "summary": { "type": "string", "maxLength": 1000 },
+        "date": { "type": "string" },
+        "category": { "type": "string", "maxLength": 100 },
+        "officialPdfUrl": { "type": "string" },
+        "isUrgent": { "type": "boolean" },
+        "publishedBy": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "title", "summary", "date", "category"]
+    },
+    "PaymentRequest": {
+      "title": "PaymentRequest",
+      "description": "Student UPI verification claim for ₹5 pass",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string", "maxLength": 100 },
+        "studentEmail": { "type": "string", "format": "email" },
+        "studentMobile": { "type": "string", "maxLength": 20 },
+        "amount": { "type": "number" },
+        "planType": { "type": "string" },
+        "utr": { "type": "string", "maxLength": 50 },
+        "screenshotUrl": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "adminNotes": { "type": "string", "maxLength": 500 },
+        "reviewedBy": { "type": "string", "maxLength": 100 },
+        "reviewedAt": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "unlockedUntil": { "type": "string" }
+      },
+      "required": ["id", "studentId", "studentName", "studentMobile", "amount", "utr", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "UserProfile",
+      "description": "Individual student profile with settings"
+    },
+    "/users/{userId}/testResults/{testResultId}": {
+      "schema": "TestResult",
+      "description": "User specific test attempts and scores"
+    },
+    "/users/{userId}/wrongQuestions/{questionId}": {
+      "schema": "WrongQuestion",
+      "description": "Wrong question notebook entries"
+    },
+    "/users/{userId}/bookmarks/{bookmarkId}": {
+      "schema": "Bookmark",
+      "description": "User bookmarked question references"
+    },
+    "/users/{userId}/studyTasks/{taskId}": {
+      "schema": "StudyTask",
+      "description": "User daily study checklist tasks"
+    },
+    "/users/{userId}/revisionReminders/{reminderId}": {
+      "schema": "RevisionReminder",
+      "description": "User spaced repetition reminders"
+    },
+    "/users/{userId}/chapterProgress/{chapterId}": {
+      "schema": "ChapterProgress",
+      "description": "User syllabus chapter completion states"
+    },
+    "/posts/{postId}": {
+      "schema": "CommunityPost",
+      "description": "Public community doubt discussions"
+    },
+    "/posts/{postId}/replies/{replyId}": {
+      "schema": "CommunityReply",
+      "description": "Replies to discussion posts"
+    },
+    "/moderationReports/{reportId}": {
+      "schema": "ModerationReport",
+      "description": "Student reports and moderation complaints"
+    },
+    "/examAnnouncements/{announcementId}": {
+      "schema": "ExamAnnouncement",
+      "description": "Verified ICAI examination announcements"
+    },
+    "/paymentRequests/{paymentId}": {
+      "schema": "PaymentRequest",
+      "description": "Student ₹5 payment verification claims"
+    }
+  }
+}

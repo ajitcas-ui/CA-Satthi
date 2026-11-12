@@ -1,0 +1,161 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // Admin access check: User email from runtime or verified admin role
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'ajitsinghca9@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    // 1. User Profiles: /users/{userId}
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin() || isSignedIn();
+      allow list: if isSignedIn();
+      
+      // Prevent Self-Assigned Roles: Non-admins can only create as 'student'
+      allow create: if isOwner(userId) && isValidId(userId) &&
+        incoming().id == userId &&
+        incoming().name is string && incoming().name.size() <= 100 &&
+        incoming().email is string && incoming().email.size() <= 150 &&
+        (isAdmin() || incoming().role == 'student');
+
+      // User cannot modify their own role; only admins can promote/demote
+      allow update: if isOwner(userId) &&
+        (isAdmin() || incoming().role == existing().role);
+
+      allow delete: if isAdmin();
+
+      // Subcollections strictly scoped to the student
+      match /testResults/{testResultId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /wrongQuestions/{questionId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /bookmarks/{bookmarkId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /studyTasks/{taskId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /revisionReminders/{reminderId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /chapterProgress/{chapterId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+    }
+
+    // 2. Community Posts: /posts/{postId}
+    match /posts/{postId} {
+      allow read: if true;
+      
+      allow create: if isSignedIn() && isValidId(postId) &&
+        incoming().authorId == request.auth.uid &&
+        incoming().title is string && incoming().title.size() <= 250 &&
+        incoming().content is string && incoming().content.size() <= 3000;
+
+      allow update: if isAdmin() || (
+        isSignedIn() && (
+          // Author editing post
+          (existing().authorId == request.auth.uid && incoming().authorId == request.auth.uid) ||
+          // Other students toggling likes or resolving question
+          incoming().diff(existing()).affectedKeys().hasOnly(['likes', 'likedBy', 'isResolved'])
+        )
+      );
+
+      allow delete: if isAdmin() || (isSignedIn() && existing().authorId == request.auth.uid);
+
+      // Replies inside post
+      match /replies/{replyId} {
+        allow read: if true;
+        allow create: if isSignedIn() && isValidId(replyId) &&
+          incoming().authorId == request.auth.uid &&
+          incoming().content is string && incoming().content.size() <= 2000;
+        allow update: if isAdmin() || (
+          isSignedIn() && (
+            (existing().authorId == request.auth.uid && incoming().authorId == request.auth.uid) ||
+            incoming().diff(existing()).affectedKeys().hasOnly(['likes', 'likedBy'])
+          )
+        );
+        allow delete: if isAdmin() || (isSignedIn() && existing().authorId == request.auth.uid);
+      }
+    }
+
+    // 3. Moderation Reports: /moderationReports/{reportId}
+    match /moderationReports/{reportId} {
+      allow create: if isSignedIn() && isValidId(reportId) &&
+        incoming().reportedByUid == request.auth.uid;
+      allow read: if isAdmin() || (isSignedIn() && existing().reportedByUid == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    // 4. Official Exam Announcements: /examAnnouncements/{announcementId}
+    match /examAnnouncements/{announcementId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 5. Payment Requests: /paymentRequests/{paymentId}
+    // PAYMENT SECURITY: Students can submit pending claims; only verified admins can approve or reject
+    match /paymentRequests/{paymentId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.studentId == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(paymentId) &&
+        incoming().studentId == request.auth.uid &&
+        incoming().status == 'pending' &&
+        incoming().utr is string && incoming().utr.size() >= 8 &&
+        incoming().amount is number && incoming().amount > 0 &&
+        incoming().studentMobile is string && incoming().studentMobile.size() >= 10;
+      allow update: if isAdmin(); // Strictly admin-only approval/rejection
+      allow delete: if isAdmin();
+    }
+
+    // 6. Admin UPI Configuration: /upiConfig/{configId}
+    match /upiConfig/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 7. Exam Countdown: /examCountdown/{configId}
+    match /examCountdown/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
