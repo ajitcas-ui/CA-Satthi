@@ -158,6 +158,7 @@ export type MembershipStatus = 'active' | 'pending' | 'expired' | 'unpaid';
 export interface UserProfile {
   id: string;
   name: string;
+  displayName?: string;
   email: string;
   role: UserRole;
   targetAttempt: string; // e.g. "January 2027" or "May 2027"
@@ -188,6 +189,77 @@ export interface UserProfile {
   lastActiveDate?: string;
   totalQuestionsAttempted?: number;
   totalQuestionsCorrect?: number;
+  dailyGoalMinutes?: number;
+  studyMinutesTotal?: number;
+}
+
+export interface StudySession {
+  id: string;
+  userId: string;
+  date: string; // YYYY-MM-DD
+  paperId?: PaperId;
+  chapterId?: string;
+  activityType: 'practice' | 'mock' | 'notes' | 'planner' | 'doubtSolver' | 'dailyChallenge' | 'general';
+  durationMinutes: number;
+  questionsAttempted?: number;
+  questionsCorrect?: number;
+  startedAt: string;
+  endedAt: string;
+}
+
+export interface StudyPresence {
+  userId: string;
+  displayName: string;
+  avatar: string;
+  targetAttempt: string;
+  activePaperId?: PaperId;
+  activeTopic?: string;
+  isStudying: boolean;
+  sessionStartedAt: string;
+  lastHeartbeatAt: string;
+}
+
+export interface AppNotification {
+  id: string;
+  recipientId: string; // 'admin', 'all', or studentId
+  title: string;
+  message: string;
+  type:
+    | 'payment_submitted'
+    | 'payment_approved'
+    | 'payment_rejected'
+    | 'exam_update'
+    | 'study_reminder'
+    | 'broadcast'
+    | 'announcement';
+  read: boolean;
+  relatedId?: string;
+  createdAt: string;
+}
+
+export type OwnerDashboardSection =
+  | 'overview'
+  | 'payments'
+  | 'students'
+  | 'live_activity'
+  | 'content'
+  | 'groups'
+  | 'notifications'
+  | 'analytics';
+
+export interface StudentProgressSnapshot {
+  studySessions: StudySession[];
+  testResults: TestAttemptResult[];
+  chapterProgress: Record<string, 'pending' | 'revising' | 'mastered'>;
+}
+
+export interface AnalyticsEvent {
+  id: string;
+  userId?: string;
+  visitorId: string;
+  eventType: 'visit' | 'login' | 'signup' | 'study_session' | 'payment_submit';
+  date: string; // YYYY-MM-DD
+  createdAt: string;
 }
 
 export interface StudentBadge {
@@ -213,6 +285,12 @@ export interface AuditLogEntry {
   type: 'payment' | 'user' | 'content' | 'moderation' | 'exam_config';
 }
 
+export interface SyllabusTopicDetail {
+  id: string;
+  title: BilingualText;
+  subtopics: BilingualText[];
+}
+
 export interface SubjectChapter {
   id: string;
   paperId: PaperId;
@@ -220,6 +298,9 @@ export interface SubjectChapter {
   title: BilingualText;
   description?: BilingualText;
   questionCount?: number;
+  section?: string;
+  weightageMarks?: string;
+  topics?: SyllabusTopicDetail[];
 }
 
 export interface CommunityGroup {
@@ -356,6 +437,17 @@ export interface DoubtQuery {
   conceptKey: string;
   icaiReferenceNote: string;
   timestamp: string;
+}
+
+export interface AIChatMessage {
+  id: string;
+  userId: string;
+  role: 'user' | 'model';
+  content: string;
+  paperId: PaperId | 'all';
+  language: 'en' | 'hi' | 'hinglish';
+  imageUrl?: string;
+  createdAt: string;
 }
 
 // ============================================================================

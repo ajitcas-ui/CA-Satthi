@@ -18,10 +18,60 @@
         "joinedGroupIds": { "type": "array" },
         "privacyHideCity": { "type": "boolean" },
         "privacyHideAttempt": { "type": "boolean" },
+        "membershipStatus": { "type": "string", "enum": ["active", "pending", "expired", "unpaid"] },
+        "hasPaidPass": { "type": "boolean" },
+        "subscriptionExpiresAt": { "type": "string" },
+        "passExpiry": { "type": "string" },
+        "paymentReference": { "type": "string", "maxLength": 40 },
+        "isSuspended": { "type": "boolean" },
+        "suspensionReason": { "type": "string", "maxLength": 300 },
+        "dailyGoalMinutes": { "type": "number" },
+        "studyMinutesTotal": { "type": "number" },
+        "studyStreak": { "type": "number" },
+        "lastActiveDate": { "type": "string" },
+        "learningPoints": { "type": "number" },
+        "totalQuestionsAttempted": { "type": "number" },
+        "totalQuestionsCorrect": { "type": "number" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
       "required": ["id", "name", "email", "role"]
+    },
+    "StudySession": {
+      "title": "StudySession",
+      "description": "Student active study session time and accuracy log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "date": { "type": "string" },
+        "paperId": { "type": "string" },
+        "chapterId": { "type": "string" },
+        "activityType": { "type": "string", "enum": ["practice", "mock", "notes", "planner", "doubtSolver", "dailyChallenge", "general"] },
+        "durationMinutes": { "type": "number" },
+        "questionsAttempted": { "type": "number" },
+        "questionsCorrect": { "type": "number" },
+        "startedAt": { "type": "string" },
+        "endedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "date", "activityType", "durationMinutes"]
+    },
+    "StudyPresence": {
+      "title": "StudyPresence",
+      "description": "Non-PII live study room presence heartbeat for single common group",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string", "maxLength": 80 },
+        "avatar": { "type": "string", "maxLength": 20 },
+        "targetAttempt": { "type": "string", "maxLength": 50 },
+        "activePaperId": { "type": "string" },
+        "activeTopic": { "type": "string", "maxLength": 120 },
+        "isStudying": { "type": "boolean" },
+        "sessionStartedAt": { "type": "string" },
+        "lastHeartbeatAt": { "type": "string" }
+      },
+      "required": ["userId", "displayName", "isStudying", "lastHeartbeatAt"]
     },
     "TestResult": {
       "title": "TestResult",
@@ -118,7 +168,7 @@
     },
     "CommunityPost": {
       "title": "CommunityPost",
-      "description": "Community doubt discussion post",
+      "description": "Single common student group doubt discussion post",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
@@ -196,18 +246,19 @@
     },
     "PaymentRequest": {
       "title": "PaymentRequest",
-      "description": "Student UPI verification claim for ₹5 pass",
+      "description": "Student UPI verification claim for ₹5 monthly pass",
       "type": "object",
       "properties": {
         "id": { "type": "string" },
         "studentId": { "type": "string" },
         "studentName": { "type": "string", "maxLength": 100 },
         "studentEmail": { "type": "string", "format": "email" },
-        "studentMobile": { "type": "string", "maxLength": 20 },
+        "studentMobile": { "type": "string", "maxLength": 15 },
+        "paymentReference": { "type": "string", "maxLength": 40 },
         "amount": { "type": "number" },
         "planType": { "type": "string" },
-        "utr": { "type": "string", "maxLength": 50 },
-        "screenshotUrl": { "type": "string" },
+        "utr": { "type": "string", "maxLength": 40 },
+        "screenshotUrl": { "type": "string", "maxLength": 750000 },
         "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
         "adminNotes": { "type": "string", "maxLength": 500 },
         "reviewedBy": { "type": "string", "maxLength": 100 },
@@ -216,12 +267,144 @@
         "unlockedUntil": { "type": "string" }
       },
       "required": ["id", "studentId", "studentName", "studentMobile", "amount", "utr", "status"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "In-app admin and student notification alerts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "recipientId": { "type": "string" },
+        "title": { "type": "string", "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string" },
+        "read": { "type": "boolean" },
+        "relatedId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "recipientId", "title", "message", "type", "read"]
+    },
+    "AnalyticsEvent": {
+      "title": "AnalyticsEvent",
+      "description": "Authentic visit, login, signup, and study telemetry events for Admin analytics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "visitorId": { "type": "string", "maxLength": 80 },
+        "eventType": { "type": "string", "enum": ["visit", "login", "signup", "study_session", "payment_submit"] },
+        "date": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "visitorId", "eventType", "date"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Owner administrative audit trail",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "action": { "type": "string", "maxLength": 200 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "performedBy": { "type": "string", "maxLength": 150 },
+        "targetId": { "type": "string" },
+        "targetName": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "type": { "type": "string" }
+      },
+      "required": ["id", "action", "details", "performedBy", "timestamp"]
+    },
+    "UpiConfig": {
+      "title": "UpiConfig",
+      "description": "Admin payment QR & UPI ID configuration",
+      "type": "object",
+      "properties": {
+        "upiId": { "type": "string", "maxLength": 80 },
+        "payeeName": { "type": "string", "maxLength": 100 },
+        "qrCodeImageUrl": { "type": "string" },
+        "defaultAmount": { "type": "number" },
+        "monthlyAmount": { "type": "number" }
+      },
+      "required": ["upiId", "payeeName", "defaultAmount", "monthlyAmount"]
+    },
+    "ExamCountdownConfig": {
+      "title": "ExamCountdownConfig",
+      "description": "Configurable CA Foundation exam attempt and verified date",
+      "type": "object",
+      "properties": {
+        "examName": { "type": "object" },
+        "examDate": { "type": "string" },
+        "targetAttempt": { "type": "string" },
+        "adminAlertNote": { "type": "object" },
+        "isDateVerified": { "type": "boolean" }
+      },
+      "required": ["targetAttempt", "isDateVerified"]
+    },
+    "SubjectChapter": {
+      "title": "SubjectChapter",
+      "description": "Configurable syllabus chapter item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "paperId": { "type": "string" },
+        "chapterNumber": { "type": "number" },
+        "title": { "type": "object" }
+      },
+      "required": ["id", "paperId", "chapterNumber", "title"]
+    },
+    "CustomQuestion": {
+      "title": "CustomQuestion",
+      "description": "Admin-managed MCQ or PYQ question",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "paperId": { "type": "string" },
+        "chapterId": { "type": "string" },
+        "difficulty": { "type": "string" }
+      },
+      "required": ["id", "paperId", "chapterId", "difficulty"]
+    },
+    "StudyNote": {
+      "title": "StudyNote",
+      "description": "Admin-managed CA Foundation revision notes & study material",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "paperId": { "type": "string" },
+        "chapterTitle": { "type": "object" },
+        "topicTitle": { "type": "object" },
+        "readTimeMinutes": { "type": "number" },
+        "tags": { "type": "array" },
+        "summary": { "type": "object" },
+        "keyPoints": { "type": "array" }
+      },
+      "required": ["id", "paperId", "chapterTitle", "topicTitle", "summary"]
+    },
+    "AIChatMessage": {
+      "title": "AIChatMessage",
+      "description": "Individual student multi-turn conversation message with CA Saathi AI",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["user", "model"] },
+        "content": { "type": "string", "maxLength": 16000 },
+        "paperId": { "type": "string", "enum": ["all", "paper1", "paper2", "paper3", "paper4"] },
+        "language": { "type": "string", "enum": ["en", "hi", "hinglish"] },
+        "imageUrl": { "type": "string", "maxLength": 250000 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "userId", "role", "content", "paperId", "language", "createdAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": "UserProfile",
-      "description": "Individual student profile with settings"
+      "description": "Individual student profile with settings and verified membership fields"
+    },
+    "/users/{userId}/studySessions/{sessionId}": {
+      "schema": "StudySession",
+      "description": "Student tracked active study sessions"
     },
     "/users/{userId}/testResults/{testResultId}": {
       "schema": "TestResult",
@@ -247,9 +430,17 @@
       "schema": "ChapterProgress",
       "description": "User syllabus chapter completion states"
     },
+    "/users/{userId}/aiChats/{messageId}": {
+      "schema": "AIChatMessage",
+      "description": "Individual multi-turn chat history with CA Saathi AI"
+    },
+    "/studyPresence/{userId}": {
+      "schema": "StudyPresence",
+      "description": "Non-PII live study presence for common student group"
+    },
     "/posts/{postId}": {
       "schema": "CommunityPost",
-      "description": "Public community doubt discussions"
+      "description": "Common student group doubt discussions"
     },
     "/posts/{postId}/replies/{replyId}": {
       "schema": "CommunityReply",
@@ -266,6 +457,38 @@
     "/paymentRequests/{paymentId}": {
       "schema": "PaymentRequest",
       "description": "Student ₹5 payment verification claims"
+    },
+    "/notifications/{notifId}": {
+      "schema": "AppNotification",
+      "description": "Admin and student real-time notifications & broadcasts"
+    },
+    "/analyticsEvents/{eventId}": {
+      "schema": "AnalyticsEvent",
+      "description": "Visitor, login, signup, and study events for Admin analytics"
+    },
+    "/auditLogs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Admin audit trail entries"
+    },
+    "/upiConfig/{configId}": {
+      "schema": "UpiConfig",
+      "description": "Admin UPI ID and QR settings"
+    },
+    "/examCountdown/{configId}": {
+      "schema": "ExamCountdownConfig",
+      "description": "Admin-managed active CA Foundation attempt and date"
+    },
+    "/subjectChapters/{chapterId}": {
+      "schema": "SubjectChapter",
+      "description": "Admin-synced syllabus chapters"
+    },
+    "/customQuestions/{questionId}": {
+      "schema": "CustomQuestion",
+      "description": "Admin-added MCQs and PYQs"
+    },
+    "/studyMaterials/{materialId}": {
+      "schema": "StudyNote",
+      "description": "Admin-managed revision notes and study materials"
     }
   }
 }

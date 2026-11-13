@@ -1,32 +1,22 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Language, NavTab, UserProfile, ThemeMode } from '../types';
-import { 
-  Flame, 
-  Languages, 
-  GraduationCap, 
-  Calendar, 
-  Sparkles,
-  BookOpen,
-  Users,
+import { AppNotification, Language, NavTab, ThemeMode, UserProfile } from '../types';
+import {
+  Languages,
+  GraduationCap,
   Shield,
-  UserCheck,
   Bell,
   Clock,
   ArrowRight,
   Send,
   Sun,
   Moon,
-  Sparkle,
-  CheckCircle2,
-  Tag
+  Check,
+  User,
 } from 'lucide-react';
-import { 
-  getNotificationSettings, 
-  getNotificationPermission, 
-  sendTestNotification, 
-  requestNotificationPermission 
-} from '../utils/notificationService';
+import { sendTestNotification } from '../utils/notificationService';
 import { playChimeSound } from '../utils/audio';
+import { canUserAccessAdmin } from '../utils/membershipRules';
+import { markNotificationReadInDb } from '../firebase/services';
 
 interface NavbarProps {
   language: Language;
@@ -36,6 +26,8 @@ interface NavbarProps {
   streak: number;
   studiedTodayMinutes: number;
   currentUser: UserProfile;
+  isEmailVerified?: boolean;
+  notifications?: AppNotification[];
   onOpenAuthModal: () => void;
   pendingTasksCount?: number;
   theme: ThemeMode;
@@ -52,17 +44,32 @@ export const Navbar: React.FC<NavbarProps> = ({
   setActiveTab,
   streak,
   currentUser,
+  isEmailVerified = true,
+  notifications = [],
   onOpenAuthModal,
   pendingTasksCount = 0,
   theme,
   onToggleTheme,
   onOpenPricingModal,
   onOpenPaymentModal,
-  onOpenReferralModal,
 }) => {
   const [showNotificationMenu, setShowNotificationMenu] = useState(false);
   const [testSent, setTestSent] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+
+  const isGuest = !currentUser || currentUser.id === 'guest';
+  const showAdminLink = canUserAccessAdmin(currentUser, isEmailVerified);
+  const [localReadBroadcastIds, setLocalReadBroadcastIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('ca_saathi_read_broadcasts');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const isNotifRead = (n: AppNotification) =>
+    n.read || (n.recipientId === 'all' && localReadBroadcastIds.includes(n.id));
+  const unreadNotifications = notifications.filter((n) => !isNotifRead(n));
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -88,285 +95,225 @@ export const Navbar: React.FC<NavbarProps> = ({
     setTimeout(() => setTestSent(false), 3000);
   };
 
+  const navLinks: Array<{ id: NavTab; label: string }> = [
+    { id: 'home', label: language === 'en' ? 'Dashboard' : 'डैशबोर्ड' },
+    { id: 'practice', label: language === 'en' ? 'Practice' : 'अभ्यास' },
+    { id: 'mocks', label: language === 'en' ? 'Mocks' : 'मॉक टेस्ट' },
+    { id: 'planner', label: language === 'en' ? 'Syllabus' : 'पाठ्यक्रम' },
+    { id: 'community', label: language === 'en' ? 'Community' : 'कम्युनिटी' },
+  ];
+
   return (
-    <header className="sticky top-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shadow-xs transition-colors duration-200">
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 h-16 flex items-center justify-between">
-        {/* Brand / Logo */}
-        <div 
+    <header className="sticky top-0 z-40 bg-white/98 dark:bg-slate-900/98 border-b border-slate-200 dark:border-slate-800 transition-colors duration-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-6">
+        {/* Zone 1: Brand Wordmark Only */}
+        <button
+          type="button"
           onClick={() => setActiveTab('home')}
-          className="flex items-center gap-2.5 cursor-pointer group select-none shrink-0"
+          className="flex items-center gap-2.5 cursor-pointer group select-none shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-lg"
         >
-          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-blue-700 via-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform">
-            <GraduationCap className="w-5 h-5 sm:w-6 sm:h-6" />
-          </div>
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-extrabold text-lg sm:text-xl tracking-tight text-slate-900 dark:text-white">
-                CA <span className="text-blue-600 dark:text-blue-400">Saathi</span>
-              </span>
-              <span className="text-[10px] sm:text-xs px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-semibold border border-blue-200 dark:border-blue-800">
-                सीए साथी
-              </span>
-            </div>
-            <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-tight hidden xs:block">
-              {language === 'en' ? 'CA Foundation Prep & Community' : 'सीए फाउंडेशन तैयारी एवं कम्युनिटी'}
-            </p>
-          </div>
-        </div>
+          <span className="w-8 h-8 rounded-lg bg-blue-700 text-white flex items-center justify-center shrink-0">
+            <GraduationCap className="w-5 h-5" />
+          </span>
+          <span className="font-bold text-lg tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
+            CA Saathi
+          </span>
+        </button>
 
-        {/* Desktop Navigation Links */}
-        <nav className="hidden xl:flex items-center gap-1 text-sm font-medium text-slate-600 dark:text-slate-300">
-          <button
-            onClick={() => setActiveTab('home')}
-            className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
-              activeTab === 'home' 
-                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-semibold' 
-                : 'hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            {language === 'en' ? 'Dashboard' : 'डैशबोर्ड'}
-          </button>
-          <button
-            onClick={() => setActiveTab('planner')}
-            className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
-              activeTab === 'planner' 
-                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-semibold' 
-                : 'hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            {language === 'en' ? 'Planner' : 'प्लानर'}
-          </button>
+        {/* Zone 2: Clean Single-Line Navigation Links */}
+        <nav aria-label="Primary navigation" className="hidden lg:flex items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-300">
+          {navLinks.map((link) => {
+            const isActive = activeTab === link.id;
+            return (
+              <button
+                key={link.id}
+                type="button"
+                onClick={() => setActiveTab(link.id)}
+                className={`py-1.5 border-b-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  isActive
+                    ? 'border-blue-600 text-blue-700 dark:text-blue-400 font-semibold'
+                    : 'border-transparent hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                {link.label}
+              </button>
+            );
+          })}
 
-          {/* Daily 10 Challenge */}
-          <button
-            onClick={() => setActiveTab('dailyChallenge')}
-            className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'dailyChallenge' 
-                ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-800' 
-                : 'hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-spin-slow" />
-            <span>{language === 'en' ? 'Daily 10' : 'दैनिक 10'}</span>
-          </button>
-
-          {/* AI Doubt Solver */}
-          <button
-            onClick={() => setActiveTab('doubtSolver')}
-            className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 ${
-              activeTab === 'doubtSolver' 
-                ? 'bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 font-bold border border-purple-200 dark:border-purple-800' 
-                : 'hover:text-purple-600 dark:hover:text-purple-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <Sparkle className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
-            <span>{language === 'en' ? 'AI Solver' : 'एआई सॉल्वर'}</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('practice')}
-            className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
-              activeTab === 'practice' 
-                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-semibold' 
-                : 'hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            {language === 'en' ? 'Practice' : 'अभ्यास'}
-          </button>
-          <button
-            onClick={() => setActiveTab('mocks')}
-            className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
-              activeTab === 'mocks' 
-                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-semibold' 
-                : 'hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            {language === 'en' ? 'Mocks' : 'मॉक टेस्ट'}
-          </button>
-
-          {/* AIR Rankings */}
-          <button
-            onClick={() => setActiveTab('leaderboard')}
-            className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
-              activeTab === 'leaderboard' 
-                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-semibold' 
-                : 'hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            {language === 'en' ? 'AIR Rankings' : 'रैंकिंग'}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('community')}
-            className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
-              activeTab === 'community' 
-                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-semibold' 
-                : 'hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>{language === 'en' ? 'Community' : 'कम्युनिटी'}</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('notes')}
-            className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
-              activeTab === 'notes' 
-                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-semibold' 
-                : 'hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            {language === 'en' ? 'Notes' : 'नोट्स'}
-          </button>
-
-          <button
-            onClick={() => setActiveTab('updates')}
-            className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
-              activeTab === 'updates' 
-                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-semibold' 
-                : 'hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-50 dark:hover:bg-slate-800/60'
-            }`}
-          >
-            {language === 'en' ? 'Updates' : 'अपडेट्स'}
-          </button>
-
-          {/* Super Admin Dashboard link - strictly restricted to authorized administrator ajitsinghca9@gmail.com */}
-          {currentUser?.role === 'admin' && currentUser?.email?.toLowerCase() === 'ajitsinghca9@gmail.com' && (
+          {showAdminLink && (
             <button
+              type="button"
               onClick={() => setActiveTab('admin')}
-              className={`px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
-                activeTab === 'admin' 
-                  ? 'bg-purple-600 text-white font-bold' 
-                  : 'text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/60 font-semibold'
+              className={`py-1.5 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                activeTab === 'admin'
+                  ? 'border-indigo-600 text-indigo-700 dark:text-indigo-400 font-semibold'
+                  : 'border-transparent text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300'
               }`}
             >
               <Shield className="w-3.5 h-3.5" />
-              <span>{language === 'en' ? 'Super Admin' : 'सुपर एडमिन'}</span>
+              <span>{language === 'en' ? 'Owner Console' : 'ओनर कंसोल'}</span>
             </button>
           )}
         </nav>
 
-        {/* Right side widgets: Referrals, UPI QR Pay, Notifications, Theme, Language, Profile */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Referral & Rewards Button */}
-          {onOpenReferralModal && (
-            <button
-              onClick={() => {
-                playChimeSound('click');
-                onOpenReferralModal();
-              }}
-              className="flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-bold hover:scale-105 transition-transform cursor-pointer"
-              title={language === 'en' ? 'Refer Friends & Earn Reward Points' : 'मित्रों को रेफर करें व अंक पाएं'}
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span className="hidden sm:inline">{language === 'en' ? 'Rewards' : 'इनाम'}</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-amber-200 dark:bg-amber-900/80 text-[10px] font-black">
-                {currentUser.referralPoints || 0}
-              </span>
-            </button>
-          )}
+        {/* Zone 3: Compact Utility Controls & Account Action */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Language Switcher */}
+          <button
+            type="button"
+            onClick={toggleLanguage}
+            aria-label="Toggle language between English and Hindi"
+            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <Languages className="w-3.5 h-3.5" />
+            <span>{language === 'en' ? 'हिन्दी' : 'ENG'}</span>
+          </button>
 
-          {/* UPI QR Pay Button */}
-          {onOpenPaymentModal && (
-            <button
-              onClick={() => {
-                playChimeSound('click');
-                onOpenPaymentModal();
-              }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs hover:scale-105 transition-all cursor-pointer"
-              title={language === 'en' ? 'Scan & Pay via UPI QR (₹5 Default)' : 'यूपीआई क्यूआर से भुगतान (₹5)'}
-            >
-              <span className="font-mono">₹5</span>
-              <span>{language === 'en' ? 'Pass' : 'पास'}</span>
-            </button>
-          )}
+          {/* Theme Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              playChimeSound('click');
+              onToggleTheme();
+            }}
+            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+            className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+          >
+            {theme === 'dark' ? (
+              <Sun className="w-4 h-4 text-amber-400" />
+            ) : (
+              <Moon className="w-4 h-4 text-slate-700" />
+            )}
+          </button>
 
-          {/* Notification Bell Dropdown */}
+          {/* Notifications Popover */}
           <div className="relative" ref={notifRef}>
             <button
+              type="button"
               onClick={() => setShowNotificationMenu(!showNotificationMenu)}
-              className="relative p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              aria-label="Study Target Notifications"
-              title={language === 'en' ? 'Study Target Notifications' : 'अध्ययन अनुस्मारक'}
+              className="relative p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+              aria-label="Notifications and study reminders"
             >
               <Bell className="w-4 h-4" />
-              {pendingTasksCount > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] font-black flex items-center justify-center animate-pulse">
-                  {pendingTasksCount}
+              {(unreadNotifications.length > 0 || pendingTasksCount > 0) && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                  {unreadNotifications.length > 0 ? unreadNotifications.length : pendingTasksCount}
                 </span>
               )}
             </button>
 
-            {/* Notification Menu Popover */}
             {showNotificationMenu && (
-              <div className="absolute right-0 mt-2 w-80 sm:w-88 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl p-4 z-50 text-slate-800 dark:text-slate-200 animate-in fade-in slide-in-from-top-2">
+              <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-4 z-50 text-slate-800 dark:text-slate-200">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                  <div className="flex items-center gap-2">
-                    <Bell className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
-                      {language === 'en' ? 'Study Reminders & Alerts' : 'अध्ययन रिमाइंडर व सूचनाएं'}
-                    </h4>
-                  </div>
-                  <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 text-[10px] font-bold">
-                    {streak}d Streak
+                  <h4 className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <Bell className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                    <span>{language === 'en' ? 'Notifications & Reminders' : 'सूचनाएं एवं रिमाइंडर'}</span>
+                  </h4>
+                  <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                    {streak}d streak
                   </span>
                 </div>
 
-                <div className="py-3 space-y-2.5">
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700">
+                <div className="py-3 space-y-2.5 max-h-64 overflow-y-auto">
+                  {notifications.length > 0 && (
+                    <div className="space-y-2">
+                      {notifications.slice(0, 4).map((n) => {
+                        const alreadyRead = isNotifRead(n);
+                        return (
+                          <div
+                            key={n.id}
+                            className={`p-2.5 rounded-lg border text-xs ${
+                              alreadyRead
+                                ? 'bg-slate-50/60 dark:bg-slate-800/40 border-slate-200/70 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                                : 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-slate-800 dark:text-slate-100'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="font-semibold">{n.title}</p>
+                              {!alreadyRead && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (n.recipientId === 'all') {
+                                      setLocalReadBroadcastIds((prev) => {
+                                        const next = [...prev, n.id];
+                                        localStorage.setItem('ca_saathi_read_broadcasts', JSON.stringify(next));
+                                        return next;
+                                      });
+                                    } else {
+                                      markNotificationReadInDb(n.id);
+                                    }
+                                  }}
+                                  className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline shrink-0 flex items-center gap-0.5 cursor-pointer"
+                                >
+                                  <Check className="w-3 h-3" />
+                                  <span>Read</span>
+                                </button>
+                              )}
+                            </div>
+                            <p className="text-[11px] mt-0.5 opacity-90">{n.message}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      <span className="font-medium text-slate-700 dark:text-slate-300">
                         {language === 'en' ? "Today's Study Targets" : 'आज के अध्ययन लक्ष्य'}
                       </span>
-                      <span className="font-bold text-blue-600 dark:text-blue-400">
+                      <span className="font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
                         {pendingTasksCount} {language === 'en' ? 'Pending' : 'शेष'}
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                       {pendingTasksCount > 0
-                        ? (language === 'en'
-                            ? 'Complete your targets before midnight to maintain your study streak!'
-                            : 'अपनी स्ट्रीक जारी रखने के लिए आज ही लक्ष्य पूरे करें!')
-                        : (language === 'en'
-                            ? 'All study targets completed for today! Awesome!'
-                            : 'आज के सभी लक्ष्य पूर्ण हो चुके हैं! शाबाश!')}
+                        ? language === 'en'
+                          ? 'Complete pending chapters today to protect your daily streak.'
+                          : 'अपनी स्ट्रीक जारी रखने के लिए आज के लक्ष्य पूरे करें।'
+                        : language === 'en'
+                          ? 'All study targets completed for today.'
+                          : 'आज के सभी अध्ययन लक्ष्य पूरे हो चुके हैं।'}
                     </p>
                   </div>
 
                   <div className="flex items-center justify-between text-xs px-1 text-slate-600 dark:text-slate-400">
                     <span className="flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5 text-blue-500" />
-                      <span>{language === 'en' ? 'Daily Alert: 08:00 PM' : 'दैनिक अलर्ट: रात्रि 8:00 बजे'}</span>
+                      <span>{language === 'en' ? 'Daily Alert: 8:00 PM' : 'दैनिक अलर्ट: रात्रि 8:00 बजे'}</span>
                     </span>
                     <button
+                      type="button"
                       onClick={handleTestAlert}
-                      className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1"
+                      className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1"
                     >
                       <Send className="w-3 h-3" />
-                      <span>{testSent ? (language === 'en' ? 'Sent!' : 'भेजा गया!') : (language === 'en' ? 'Test Alert' : 'परीक्षण')}</span>
+                      <span>{testSent ? (language === 'en' ? 'Sent' : 'भेजा गया') : (language === 'en' ? 'Test' : 'परीक्षण')}</span>
                     </button>
                   </div>
                 </div>
 
                 <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
                   <button
+                    type="button"
                     onClick={() => {
                       setShowNotificationMenu(false);
                       onOpenPricingModal();
                     }}
-                    className="text-[11px] text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200"
+                    className="text-xs text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
                   >
-                    {language === 'en' ? 'Pricing Pass Info' : 'पास जानकारी'}
+                    {language === 'en' ? 'Membership Info' : 'सदस्यता जानकारी'}
                   </button>
-
                   <button
+                    type="button"
                     onClick={() => {
                       setShowNotificationMenu(false);
-                      setActiveTab('planner');
+                      setActiveTab('progress');
                     }}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors cursor-pointer"
                   >
-                    <span>{language === 'en' ? 'Open Study Planner' : 'प्लानर खोलें'}</span>
+                    <span>{language === 'en' ? 'Study Tracker' : 'स्टडी ट्रैकर'}</span>
                     <ArrowRight className="w-3 h-3" />
                   </button>
                 </div>
@@ -374,69 +321,43 @@ export const Navbar: React.FC<NavbarProps> = ({
             )}
           </div>
 
-          {/* Dark / Light Mode Toggle Button */}
-          <button
-            onClick={() => {
-              playChimeSound('click');
-              onToggleTheme();
-            }}
-            aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-            title={language === 'en' ? `Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode` : (theme === 'dark' ? 'लाइट मोड चालू करें' : 'डार्क मोड चालू करें')}
-            className="p-2 rounded-xl text-slate-600 dark:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent dark:border-slate-700 transition-all cursor-pointer"
-          >
-            {theme === 'dark' ? (
-              <Sun className="w-4 h-4 text-amber-400 animate-spin-slow" />
-            ) : (
-              <Moon className="w-4 h-4 text-slate-700" />
-            )}
-          </button>
+          {/* Primary Action: Owner Console OR Student ₹5 Pass */}
+          {showAdminLink ? (
+            <button
+              type="button"
+              onClick={() => {
+                playChimeSound('click');
+                setActiveTab('admin');
+              }}
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>{language === 'en' ? 'Owner Dashboard' : 'ओनर डैशबोर्ड'}</span>
+            </button>
+          ) : (
+            onOpenPaymentModal && (
+              <button
+                type="button"
+                onClick={() => {
+                  playChimeSound('click');
+                  onOpenPaymentModal();
+                }}
+                className="hidden sm:inline-flex items-center px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                {language === 'en' ? '₹5 Pass' : '₹5 पास'}
+              </button>
+            )
+          )}
 
-          {/* Streak pill */}
-          <div 
-            title={language === 'en' ? `${streak} Days Study Streak!` : `${streak} दिनों की सतत पढ़ाई!`}
-            className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-bold"
-          >
-            <Flame className="w-4 h-4 text-amber-500 fill-amber-500 animate-pulse" />
-            <span>{streak}</span>
-            <span className="font-normal text-amber-700 dark:text-amber-400">
-              {language === 'en' ? 'd' : 'दिन'}
-            </span>
-          </div>
-
-          {/* Bilingual Language Switcher Button */}
           <button
-            onClick={toggleLanguage}
-            aria-label="Toggle language between English and Hindi"
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-bold transition-all cursor-pointer"
-          >
-            <Languages className="w-3.5 h-3.5" />
-            <span>{language === 'en' ? 'हिन्दी' : 'ENG'}</span>
-          </button>
-
-          {/* User Account / Profile Chip */}
-          <button
+            type="button"
             onClick={onOpenAuthModal}
-            className="flex items-center gap-2 p-1.5 sm:px-2.5 sm:py-1 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all cursor-pointer shadow-2xs"
-            title={language === 'en' ? 'Student Profile & Accounts' : 'विद्यार्थी प्रोफ़ाइल एवं खाते'}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-100 to-indigo-100 dark:from-blue-950 dark:to-indigo-950 flex items-center justify-center text-sm shrink-0">
-              {currentUser.avatar || '🎓'}
-            </div>
-            <div className="hidden sm:block text-left">
-              <div className="flex items-center gap-1">
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate max-w-[85px]">
-                  {currentUser.name.split(' ')[0]}
-                </span>
-                {currentUser?.role === 'admin' && currentUser?.email?.toLowerCase() === 'ajitsinghca9@gmail.com' && (
-                  <span className="text-[9px] font-black uppercase px-1 rounded-xs bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300">
-                    ADM
-                  </span>
-                )}
-              </div>
-              <span className="text-[10px] text-slate-500 dark:text-slate-400 block leading-tight">
-                {currentUser.targetAttempt}
-              </span>
-            </div>
+            <User className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+            <span className="truncate max-w-[100px]">
+              {isGuest ? (language === 'en' ? 'Sign In' : 'लॉगिन') : currentUser.name.split(' ')[0]}
+            </span>
           </button>
         </div>
       </div>

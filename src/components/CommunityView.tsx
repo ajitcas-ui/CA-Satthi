@@ -1,26 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Language, 
-  UserProfile, 
-  CommunityGroup, 
-  CommunityPost, 
-  StudyPartner, 
-  PaperId 
+import {
+  Language,
+  UserProfile,
+  CommunityPost,
+  StudyPartner,
+  PaperId,
+  StudyPresence,
 } from '../types';
 import { PAPERS } from '../data/papersData';
-import { 
-  getGroups, 
-  getPosts, 
-  getStudyPartners, 
-  toggleJoinGroup, 
-  createCommunityPost, 
-  addReplyToPost, 
-  toggleLikePost, 
-  togglePinPost, 
-  toggleResolveDoubt, 
-  deletePost, 
-  toggleConnectPartner, 
-  submitReport 
+import { COMMON_GROUP_ID, INITIAL_GROUPS } from '../data/communityData';
+import {
+  getPosts,
+  getStudyPartners,
+  createCommunityPost,
+  addReplyToPost,
+  toggleLikePost,
+  togglePinPost,
+  toggleResolveDoubt,
+  deletePost,
+  toggleConnectPartner,
+  submitReport,
 } from '../utils/storageDb';
 import {
   createCommunityPostInDb,
@@ -30,57 +29,54 @@ import {
   toggleResolveDoubtInDb,
   deletePostFromDb,
   submitModerationReportToDb,
-  subscribeToCommunityPosts
+  subscribeToCommunityPosts,
 } from '../firebase/services';
 import { playChimeSound } from '../utils/audio';
-import { 
-  Users, 
-  MessageSquare, 
-  Heart, 
-  Bookmark, 
-  Share2, 
-  Plus, 
-  CheckCircle2, 
-  Pin, 
-  Trash2, 
+import {
+  Users,
+  MessageSquare,
+  Heart,
+  Plus,
+  CheckCircle2,
+  Pin,
+  Trash2,
   X,
-  AlertTriangle, 
-  UserCheck, 
-  Sparkles, 
-  Search, 
-  Filter, 
-  Send, 
-  Check, 
-  HelpCircle, 
-  Clock, 
-  ShieldCheck, 
-  ShieldAlert,
-  ChevronRight,
-  Calculator,
-  Scale,
-  LineChart,
-  TrendingUp,
-  Award,
-  Target
+  AlertTriangle,
+  Search,
+  Send,
+  Check,
+  Clock,
+  ShieldCheck,
+  Radio,
 } from 'lucide-react';
 
 interface CommunityViewProps {
   language: Language;
   currentUser: UserProfile;
+  livePeers?: StudyPresence[];
 }
 
 export const CommunityView: React.FC<CommunityViewProps> = ({
   language,
   currentUser,
+  livePeers = [],
 }) => {
-  const [activeMainTab, setActiveMainTab] = useState<'discussions' | 'groups' | 'partners'>('discussions');
-
-  // Groups and Posts state
-  const [groups, setGroups] = useState<CommunityGroup[]>(() => getGroups());
+  const [activeMainTab, setActiveMainTab] = useState<'discussions' | 'liveRoom' | 'partners'>('discussions');
   const [posts, setPosts] = useState<CommunityPost[]>(() => getPosts());
   const [partners, setPartners] = useState<StudyPartner[]>(() => getStudyPartners());
 
-  // Real-time Firestore Posts Sync
+  const [paperFilter, setPaperFilter] = useState<string>('all');
+  const [searchPostQuery, setSearchPostQuery] = useState('');
+
+  // Tick every second when Live Study Room tab is open for real elapsed timers
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (activeMainTab !== 'liveRoom') return;
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [activeMainTab]);
+
+  // Real-time Firestore posts sync
   useEffect(() => {
     const unsub = subscribeToCommunityPosts((cloudPosts) => {
       if (cloudPosts.length > 0) {
@@ -90,51 +86,26 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
     return () => unsub();
   }, []);
 
-  // Filter state
-  const [selectedGroupId, setSelectedGroupId] = useState<string>('all');
-  const [searchPostQuery, setSearchPostQuery] = useState('');
-
-  // New Post Form modal
   const [showNewPostModal, setShowNewPostModal] = useState(false);
   const [postTitle, setPostTitle] = useState('');
   const [postContent, setPostContent] = useState('');
-  const [postGroupId, setPostGroupId] = useState('grp_accounts');
-  const [postPaper, setPostPaper] = useState<PaperId | ''>('paper3');
+  const [postPaper, setPostPaper] = useState<PaperId | ''>('paper1');
   const [postChapter, setPostChapter] = useState('');
   const [postTagInput, setPostTagInput] = useState('');
 
-  // Active expanded replies state
   const [expandedPostReplies, setExpandedPostReplies] = useState<Record<string, boolean>>({
     post_1: true,
   });
   const [replyInput, setReplyInput] = useState<Record<string, string>>({});
 
-  // Report Modal
   const [reportTarget, setReportTarget] = useState<{ id: string; title: string } | null>(null);
-  const [reportReason, setReportReason] = useState('Spam or inappropriate content');
+  const [reportReason, setReportReason] = useState('Spam or advertising');
   const [reportDetails, setReportDetails] = useState('');
 
-  // Partner filters
   const [partnerTargetFilter, setPartnerTargetFilter] = useState('all');
   const [partnerWeakFilter, setPartnerWeakFilter] = useState('all');
 
-  const getGroupIcon = (iconName: string) => {
-    switch (iconName) {
-      case 'Calculator': return Calculator;
-      case 'Scale': return Scale;
-      case 'LineChart': return LineChart;
-      case 'TrendingUp': return TrendingUp;
-      case 'Award': return Award;
-      case 'Target': return Target;
-      default: return MessageSquare;
-    }
-  };
-
-  const handleToggleJoin = (groupId: string) => {
-    playChimeSound('click');
-    const updated = toggleJoinGroup(groupId);
-    setGroups([...updated]);
-  };
+  const commonGroup = INITIAL_GROUPS[0];
 
   const handleCreatePost = (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,16 +117,16 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
       .filter(Boolean);
 
     const created = createCommunityPost({
-      groupId: postGroupId,
+      groupId: COMMON_GROUP_ID,
       title: postTitle,
       content: postContent,
       paperId: postPaper ? (postPaper as PaperId) : undefined,
       chapterName: postChapter.trim() || undefined,
-      tags: tags.length > 0 ? tags : ['CA Foundation'],
+      tags: tags.length > 0 ? tags : ['Jan 2027'],
     });
 
     createCommunityPostInDb({
-      groupId: postGroupId,
+      groupId: COMMON_GROUP_ID,
       authorId: currentUser.id,
       authorName: currentUser.name,
       authorRole: currentUser.role,
@@ -164,7 +135,7 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
       content: postContent,
       paperId: postPaper ? (postPaper as PaperId) : undefined,
       chapterName: postChapter.trim() || undefined,
-      tags: tags.length > 0 ? tags : ['CA Foundation'],
+      tags: tags.length > 0 ? tags : ['Jan 2027'],
     }).catch(console.error);
 
     setPosts([created, ...posts]);
@@ -178,8 +149,11 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
 
   const handleLikePost = (postId: string) => {
     playChimeSound('click');
+    const post = posts.find((p) => p.id === postId);
+    const hasLiked = post ? post.likedBy.includes(currentUser.id) : false;
     const updated = toggleLikePost(postId);
     setPosts([...updated]);
+    toggleLikePostInDb(postId, currentUser.id, hasLiked).catch(() => {});
   };
 
   const handleAddReply = (postId: string) => {
@@ -200,38 +174,33 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
 
       playChimeSound('success');
       setPosts((prev) =>
-        prev.map((p) => {
-          if (p.id === postId) {
-            return {
-              ...p,
-              replies: [...p.replies, added],
-            };
-          }
-          return p;
-        })
+        prev.map((p) => (p.id === postId ? { ...p, replies: [...p.replies, added] } : p))
       );
       setReplyInput((prev) => ({ ...prev, [postId]: '' }));
     }
   };
 
   const handlePinPost = (postId: string) => {
+    const target = posts.find((p) => p.id === postId);
     const updated = togglePinPost(postId);
     setPosts([...updated]);
+    togglePinPostInDb(postId, !(target?.isPinned)).catch(() => {});
     playChimeSound('click');
   };
 
   const handleResolveDoubt = (postId: string) => {
+    const target = posts.find((p) => p.id === postId);
     const updated = toggleResolveDoubt(postId);
     setPosts([...updated]);
+    toggleResolveDoubtInDb(postId, !(target?.isResolved)).catch(() => {});
     playChimeSound('success');
   };
 
   const handleDeletePost = (postId: string) => {
-    if (confirm(language === 'en' ? 'Delete this post?' : 'इस पोस्ट को हटाएं?')) {
-      const updated = deletePost(postId);
-      setPosts([...updated]);
-      playChimeSound('click');
-    }
+    const updated = deletePost(postId);
+    setPosts([...updated]);
+    deletePostFromDb(postId).catch(() => {});
+    playChimeSound('click');
   };
 
   const handleConnectPartner = (partnerId: string) => {
@@ -267,15 +236,28 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
     setReportDetails('');
   };
 
+  const formatElapsedDuration = (startedIso: string) => {
+    const started = new Date(startedIso).getTime();
+    if (!Number.isFinite(started)) return '0m';
+    const diffSecs = Math.max(0, Math.floor((nowMs - started) / 1000));
+    const hrs = Math.floor(diffSecs / 3600);
+    const mins = Math.floor((diffSecs % 3600) / 60);
+    const secs = diffSecs % 60;
+    if (hrs > 0) return `${hrs}h ${mins}m ${secs}s`;
+    if (mins > 0) return `${mins}m ${secs}s`;
+    return `${secs}s`;
+  };
+
   const filteredPosts = posts.filter((p) => {
-    if (selectedGroupId !== 'all' && p.groupId !== selectedGroupId) return false;
+    if (paperFilter !== 'all' && p.paperId !== paperFilter) return false;
     if (searchPostQuery.trim()) {
       const q = searchPostQuery.toLowerCase();
-      const matchTitle = p.title.toLowerCase().includes(q);
-      const matchContent = p.content.toLowerCase().includes(q);
-      const matchAuthor = p.authorName.toLowerCase().includes(q);
-      const matchTag = p.tags.some((t) => t.toLowerCase().includes(q));
-      if (!matchTitle && !matchContent && !matchAuthor && !matchTag) return false;
+      return (
+        p.title.toLowerCase().includes(q) ||
+        p.content.toLowerCase().includes(q) ||
+        p.authorName.toLowerCase().includes(q) ||
+        p.tags.some((t) => t.toLowerCase().includes(q))
+      );
     }
     return true;
   });
@@ -288,127 +270,141 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
 
   return (
     <div className="space-y-6 pb-24 lg:pb-8">
-      {/* Header & Sub-Navigation */}
+      {/* Header & Common Group Identity */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
             <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            {language === 'en' ? 'CA Saathi Student Community' : 'सीए साथी छात्र समुदाय'}
+            {commonGroup.name[language]}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-            {language === 'en'
-              ? 'Connect with fellow CA Foundation aspirants, clear tricky doubts, and find study buddies'
-              : 'सीए फाउंडेशन साथियों से जुड़ें, शंकाएं हल करें और अध्ययन साथी खोजें'}
+            {commonGroup.description[language]}
           </p>
         </div>
 
-        {/* Tab switcher: Discussions / Groups / Partners */}
+        {/* Tab switcher: Common Group Feed / Live Study Room / Study Partners */}
         <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 self-start md:self-auto">
           <button
             onClick={() => setActiveMainTab('discussions')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeMainTab === 'discussions' ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              activeMainTab === 'discussions'
+                ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            {language === 'en' ? 'Doubt Discussions' : 'शंका चर्चा'}
+            {language === 'en' ? 'Common Group Feed' : 'समुदाय चर्चा'}
           </button>
           <button
-            onClick={() => setActiveMainTab('groups')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeMainTab === 'groups' ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+            onClick={() => setActiveMainTab('liveRoom')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              activeMainTab === 'liveRoom'
+                ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            {language === 'en' ? '4 Subject Groups' : '4 विषय समूह'}
+            <Radio className="w-3.5 h-3.5 text-emerald-500" />
+            <span>
+              {language === 'en' ? 'Live Study Room' : 'लाइव स्टडी'} ({livePeers.length})
+            </span>
           </button>
           <button
             onClick={() => setActiveMainTab('partners')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-              activeMainTab === 'partners' ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+              activeMainTab === 'partners'
+                ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
-            {language === 'en' ? 'Study Partner Match' : 'स्टडी पार्टनर'}
+            {language === 'en' ? 'Study Partners' : 'स्टडी पार्टनर'}
           </button>
         </div>
       </div>
 
-      {/* Safety & Academic Discipline Notice */}
+      {/* Safety Notice */}
       <div className="bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80 rounded-2xl p-3 sm:p-4 flex items-center justify-between gap-3 text-xs text-emerald-900 dark:text-emerald-200">
         <div className="flex items-center gap-2.5">
           <ShieldCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
           <div>
-            <span className="font-bold block sm:inline">
-              {language === 'en' ? 'Safe Academic Environment:' : 'सुरक्षित शैक्षणिक मंच:'}
+            <span className="font-bold">
+              {language === 'en' ? 'Safe Single Common Group:' : 'सुरक्षित एकल विद्यार्थी समूह:'}
             </span>{' '}
             <span className="text-emerald-800 dark:text-emerald-300">
               {language === 'en'
-                ? 'Strict female student privacy. Phone numbers are hidden. Zero tolerance for unsolicited contact or misconduct.'
-                : 'महिला छात्र सुरक्षा व गोपनीयता नीति। फोन नंबर हमेशा सुरक्षित हैं। किसी भी अनुचित आचरण पर तुरंत स्थायी प्रतिबंध।'}
+                ? 'Student phone numbers and emails are strictly hidden. Academic discussions only for January 2027.'
+                : 'फोन नंबर व ईमेल पूर्णतः गोपनीय हैं। केवल जनवरी 2027 परीक्षा से संबंधित चर्चा करें।'}
             </span>
           </div>
         </div>
-        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-200/80 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200 uppercase tracking-wider shrink-0 hidden sm:inline-block">
-          {language === 'en' ? 'Owner Monitored' : 'एडमिन निगरानी'}
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-200/80 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-200 uppercase shrink-0 hidden sm:inline-block">
+          Owner Moderated
         </span>
       </div>
 
-      {/* --- TAB 1: DOUBT DISCUSSIONS FEED --- */}
+      {/* TAB 1: COMMON GROUP DOUBT DISCUSSIONS */}
       {activeMainTab === 'discussions' && (
         <div className="space-y-4">
-          {/* Action & Filter Toolbar */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 dark:text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder={language === 'en' ? 'Search questions, case laws, or calculator doubts...' : 'प्रश्न, केस लॉ या कैलकुलेटर शंका खोजें...'}
-                value={searchPostQuery}
-                onChange={(e) => setSearchPostQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:outline-blue-500"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <select
-                value={selectedGroupId}
-                onChange={(e) => setSelectedGroupId(e.target.value)}
-                className="px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-medium text-slate-700 dark:text-slate-200 focus:outline-blue-500"
-              >
-                <option value="all">{language === 'en' ? 'All Groups' : 'सभी समूह'}</option>
-                {groups.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name[language]}
-                  </option>
-                ))}
-              </select>
+          {/* Paper Filter Pills & Ask Doubt */}
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder={language === 'en' ? 'Search questions, case laws, or doubts...' : 'प्रश्न या शंका खोजें...'}
+                  value={searchPostQuery}
+                  onChange={(e) => setSearchPostQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                />
+              </div>
 
               <button
                 onClick={() => setShowNewPostModal(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-500 text-white font-bold text-xs shadow-xs transition-all cursor-pointer shrink-0"
+                className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs cursor-pointer shrink-0"
               >
                 <Plus className="w-4 h-4" />
-                <span>{language === 'en' ? 'Ask Doubt' : 'शंका पूछें'}</span>
+                <span>{language === 'en' ? 'Ask Doubt in Community' : 'शंका पूछें'}</span>
               </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: 'all', label: language === 'en' ? 'All 4 Papers' : 'सभी विषय' },
+                { id: 'paper1', label: 'Paper 1: Accounting' },
+                { id: 'paper2', label: 'Paper 2: Business Laws' },
+                { id: 'paper3', label: 'Paper 3: Maths & Stats' },
+                { id: 'paper4', label: 'Paper 4: Economics' },
+              ].map((pf) => (
+                <button
+                  key={pf.id}
+                  onClick={() => setPaperFilter(pf.id)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer transition-colors ${
+                    paperFilter === pf.id
+                      ? 'bg-blue-600 border-blue-600 text-white'
+                      : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  {pf.label}
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* Posts List */}
           <div className="space-y-3.5">
             {filteredPosts.length === 0 ? (
               <div className="bg-white dark:bg-slate-900 rounded-2xl p-10 text-center border border-dashed border-slate-300 dark:border-slate-700">
-                <MessageSquare className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
+                <MessageSquare className="w-10 h-10 text-slate-300 mx-auto mb-2" />
                 <h3 className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                  {language === 'en' ? 'No discussion threads found.' : 'इस फ़िल्टर के लिए कोई चर्चा नहीं मिली।'}
+                  {language === 'en' ? 'No discussion threads match this filter.' : 'कोई चर्चा नहीं मिली।'}
                 </h3>
                 <button
                   onClick={() => setShowNewPostModal(true)}
-                  className="mt-3 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  className="mt-3 text-xs font-bold text-blue-600 hover:underline cursor-pointer"
                 >
-                  {language === 'en' ? '+ Post the first question' : '+ पहला प्रश्न पोस्ट करें'}
+                  + Post the first doubt
                 </button>
               </div>
             ) : (
               filteredPosts.map((post) => {
-                const group = groups.find((g) => g.id === post.groupId);
                 const hasLiked = post.likedBy.includes(currentUser.id);
                 const isRepliesOpen = expandedPostReplies[post.id];
                 const canModerate = currentUser.role === 'admin' || currentUser.role === 'moderator';
@@ -416,9 +412,8 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
                 return (
                   <article
                     key={post.id}
-                    className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200/90 dark:border-slate-800 shadow-xs hover:border-blue-200 dark:hover:border-blue-700 transition-all space-y-3"
+                    className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-3"
                   >
-                    {/* Top Row: Author, Group, Pin, Moderation */}
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2.5">
                         <span className="text-2xl">{post.authorAvatar}</span>
@@ -426,62 +421,48 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
                           <div className="flex items-center gap-1.5">
                             <span className="font-bold text-xs text-slate-900 dark:text-white">{post.authorName}</span>
                             {post.authorRole === 'admin' && (
-                              <span className="text-[10px] font-black uppercase px-1.5 py-0.2 rounded bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                              <span className="text-[10px] font-black uppercase px-1.5 rounded bg-purple-100 text-purple-800">
                                 Mentor
                               </span>
                             )}
                           </div>
-                          <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                            {post.createdAt} • in <span className="font-semibold text-blue-700 dark:text-blue-400">{group?.name[language]}</span>
+                          <span className="text-[11px] text-slate-400">
+                            {post.createdAt} • {post.paperId ? post.paperId.toUpperCase() : 'General'}
                           </span>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-1.5">
                         {post.isPinned && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-                            <Pin className="w-3 h-3 text-amber-600 dark:text-amber-400 fill-amber-600 dark:fill-amber-400" />
-                            {language === 'en' ? 'Pinned' : 'पिन किया'}
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                            <Pin className="w-3 h-3" />
+                            Pinned
                           </span>
                         )}
                         {post.isResolved && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                            <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                            {language === 'en' ? 'Resolved' : 'समाधान हुआ'}
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Resolved
                           </span>
                         )}
 
-                        {/* Report Button */}
                         <button
                           onClick={() => setReportTarget({ id: post.id, title: post.title })}
-                          title={language === 'en' ? 'Report Post' : 'शिकायत करें'}
-                          className="p-1 text-slate-400 dark:text-slate-500 hover:text-rose-500 dark:hover:text-rose-400 rounded-lg cursor-pointer"
+                          title="Report Post"
+                          className="p-1 text-slate-400 hover:text-rose-500 cursor-pointer"
                         >
                           <AlertTriangle className="w-3.5 h-3.5" />
                         </button>
 
-                        {/* Admin Controls */}
                         {canModerate && (
                           <div className="flex items-center gap-1 pl-1 border-l border-slate-200 dark:border-slate-800">
-                            <button
-                              onClick={() => handlePinPost(post.id)}
-                              title={language === 'en' ? 'Toggle Pin' : 'पिन बदलें'}
-                              className="p-1 text-slate-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 cursor-pointer"
-                            >
+                            <button onClick={() => handlePinPost(post.id)} className="p-1 text-slate-500 hover:text-amber-600 cursor-pointer">
                               <Pin className="w-3.5 h-3.5" />
                             </button>
-                            <button
-                              onClick={() => handleResolveDoubt(post.id)}
-                              title={language === 'en' ? 'Toggle Resolved' : 'समाधान बदलें'}
-                              className="p-1 text-slate-500 dark:text-slate-400 hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer"
-                            >
+                            <button onClick={() => handleResolveDoubt(post.id)} className="p-1 text-slate-500 hover:text-emerald-600 cursor-pointer">
                               <CheckCircle2 className="w-3.5 h-3.5" />
                             </button>
-                            <button
-                              onClick={() => handleDeletePost(post.id)}
-                              title={language === 'en' ? 'Delete Post' : 'हटाएं'}
-                              className="p-1 text-slate-500 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer"
-                            >
+                            <button onClick={() => handleDeletePost(post.id)} className="p-1 text-slate-500 hover:text-rose-600 cursor-pointer">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -489,23 +470,19 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Post Content */}
                     <div>
-                      <h3 className="font-bold text-slate-900 dark:text-white text-sm sm:text-base mb-1">
-                        {post.title}
-                      </h3>
+                      <h3 className="font-bold text-slate-900 dark:text-white text-sm sm:text-base mb-1">{post.title}</h3>
                       <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-line">
                         {post.content}
                       </p>
                     </div>
 
-                    {/* Tags */}
                     {post.tags && post.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {post.tags.map((tag, tIdx) => (
                           <span
                             key={tIdx}
-                            className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-900/60 text-[10px] font-semibold"
+                            className="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-semibold"
                           >
                             #{tag}
                           </span>
@@ -513,39 +490,30 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
                       </div>
                     )}
 
-                    {/* Post Bottom Bar: Like, Reply Toggle */}
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400">
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100 dark:border-slate-800 text-xs text-slate-600">
                       <div className="flex items-center gap-3">
                         <button
                           onClick={() => handleLikePost(post.id)}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
-                            hasLiked ? 'text-rose-600 dark:text-rose-400 font-bold bg-rose-50 dark:bg-rose-950/40' : 'hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg cursor-pointer ${
+                            hasLiked ? 'text-rose-600 font-bold bg-rose-50' : 'hover:bg-slate-50 dark:hover:bg-slate-800'
                           }`}
                         >
                           <Heart className={`w-3.5 h-3.5 ${hasLiked ? 'fill-rose-500 text-rose-500' : ''}`} />
-                          <span>{post.likes}</span>
+                          <span className="tabular-nums">{post.likes}</span>
                         </button>
 
                         <button
                           onClick={() =>
-                            setExpandedPostReplies((prev) => ({
-                              ...prev,
-                              [post.id]: !prev[post.id],
-                            }))
+                            setExpandedPostReplies((prev) => ({ ...prev, [post.id]: !prev[post.id] }))
                           }
-                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 cursor-pointer"
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
                         >
                           <MessageSquare className="w-3.5 h-3.5" />
-                          <span>{post.replies.length} {language === 'en' ? 'Replies' : 'उत्तर'}</span>
+                          <span className="tabular-nums">{post.replies.length} Replies</span>
                         </button>
                       </div>
-
-                      <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                        {post.paperId ? post.paperId.toUpperCase() : 'Discussion'}
-                      </span>
                     </div>
 
-                    {/* Replies Thread */}
                     {isRepliesOpen && (
                       <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3 bg-slate-50/50 dark:bg-slate-800/40 -mx-5 -mb-5 p-4 rounded-b-2xl">
                         {post.replies.map((rep) => (
@@ -553,7 +521,7 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
                             key={rep.id}
                             className={`p-3 rounded-xl border text-xs space-y-1.5 ${
                               rep.isAcceptedSolution
-                                ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300 dark:border-emerald-800 ring-1 ring-emerald-500/20'
+                                ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-300'
                                 : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
                             }`}
                           >
@@ -561,40 +529,28 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
                               <div className="flex items-center gap-1.5">
                                 <span className="text-base">{rep.authorAvatar}</span>
                                 <span className="font-bold text-slate-900 dark:text-white">{rep.authorName}</span>
-                                {rep.authorRole === 'admin' && (
-                                  <span className="text-[9px] font-black uppercase px-1 py-0.2 rounded bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                                    Mentor
-                                  </span>
-                                )}
                                 {rep.isAcceptedSolution && (
-                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-0.5">
-                                    <Check className="w-3 h-3" />
-                                    {language === 'en' ? 'Verified Solution' : 'सत्यापित उत्तर'}
+                                  <span className="text-[9px] font-bold px-1.5 rounded bg-emerald-100 text-emerald-800 flex items-center gap-0.5">
+                                    <Check className="w-3 h-3" /> Verified Solution
                                   </span>
                                 )}
                               </div>
-                              <span className="text-[10px] text-slate-400 dark:text-slate-500">{rep.createdAt}</span>
+                              <span className="text-[10px] text-slate-400">{rep.createdAt}</span>
                             </div>
-                            <p className="text-slate-700 dark:text-slate-300 leading-relaxed">{rep.content}</p>
+                            <p className="text-slate-700 dark:text-slate-300">{rep.content}</p>
                           </div>
                         ))}
 
-                        {/* Add Reply Input */}
                         <div className="flex items-center gap-2 pt-1">
                           <input
                             type="text"
-                            placeholder={language === 'en' ? 'Write an answer or study suggestion...' : 'उत्तर या अध्ययन सुझाव लिखें...'}
+                            placeholder={language === 'en' ? 'Write a helpful answer...' : 'उत्तर लिखें...'}
                             value={replyInput[post.id] || ''}
-                            onChange={(e) =>
-                              setReplyInput((prev) => ({
-                                ...prev,
-                                [post.id]: e.target.value,
-                              }))
-                            }
+                            onChange={(e) => setReplyInput((prev) => ({ ...prev, [post.id]: e.target.value }))}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') handleAddReply(post.id);
                             }}
-                            className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 text-xs focus:outline-blue-500"
+                            className="flex-1 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
                           />
                           <button
                             onClick={() => handleAddReply(post.id)}
@@ -613,160 +569,141 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
         </div>
       )}
 
-      {/* --- TAB 2: ALL GROUPS DIRECTORY --- */}
-      {activeMainTab === 'groups' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {groups.map((group) => {
-            const Icon = getGroupIcon(group.iconName);
-            const isJoined = currentUser.joinedGroupIds.includes(group.id);
+      {/* TAB 2: LIVE STUDY ROOM (REAL-TIME FIRESTORE PRESENCE - ZERO FAKE USERS) */}
+      {activeMainTab === 'liveRoom' && (
+        <div className="space-y-4">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Radio className="w-4 h-4 text-emerald-500" />
+                <span>{language === 'en' ? 'Live Co-Study Room (January 2027 Cohort)' : 'लाइव सह-अध्ययन कक्ष'}</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {language === 'en'
+                  ? 'Displays verified signed-in aspirants actively studying right now. Phone numbers and emails are never shared.'
+                  : 'वर्तमान में सक्रिय छात्रों को दिखाता है। निजी जानकारी पूर्णतः सुरक्षित है।'}
+              </p>
+            </div>
+            <span className="px-3 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-bold tabular-nums">
+              {livePeers.length} {language === 'en' ? 'Studying Online Now' : 'ऑनलाइन पढ़ रहे हैं'}
+            </span>
+          </div>
 
-            return (
-              <div
-                key={group.id}
-                className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-md transition-all flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2 mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-900/60 flex items-center justify-center font-bold">
-                        <Icon className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <h3 className="font-bold text-slate-900 dark:text-white text-base leading-snug">
-                          {group.name[language]}
-                        </h3>
-                        <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                          {group.memberCount} {language === 'en' ? 'Aspirants' : 'सदस्य'} • {group.activeDiscussionsCount} {language === 'en' ? 'Discussions' : 'चर्चाएं'}
-                        </span>
-                      </div>
+          {livePeers.length === 0 ? (
+            <div className="bg-white dark:bg-slate-900 rounded-2xl p-10 text-center border border-dashed border-slate-300 dark:border-slate-700 space-y-2">
+              <Clock className="w-10 h-10 text-slate-300 mx-auto" />
+              <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                {language === 'en'
+                  ? 'No other students in an active session right now'
+                  : 'अभी कोई अन्य छात्र सक्रिय सत्र में नहीं है'}
+              </h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                {language === 'en'
+                  ? 'Open Practice Arena, Timed Mock Tests, or AI Doubt Solver while signed in to automatically join the Live Study Room.'
+                  : 'लाइव स्टडी रूम में शामिल होने के लिए साइन इन करके अभ्यास या मॉक टेस्ट शुरू करें।'}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
+              {livePeers.map((peer) => (
+                <div
+                  key={peer.userId}
+                  className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-xl shrink-0">
+                      {peer.avatar || '🎓'}
                     </div>
-
-                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                      {group.category}
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{peer.displayName}</p>
+                      <p className="text-[11px] text-slate-500 truncate">
+                        {peer.activeTopic || 'CA Foundation Study'} • {(peer.activePaperId || 'paper1').toUpperCase()}
+                      </p>
+                      <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold">
+                        {peer.targetAttempt || 'January 2027'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-mono text-xs font-bold tabular-nums">
+                      <Clock className="w-3 h-3" />
+                      {formatElapsedDuration(peer.sessionStartedAt)}
                     </span>
                   </div>
-
-                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-4">
-                    {group.description[language]}
-                  </p>
                 </div>
-
-                <div className="flex items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                  <button
-                    onClick={() => handleToggleJoin(group.id)}
-                    className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      isJoined
-                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
-                        : 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
-                    }`}
-                  >
-                    {isJoined ? (language === 'en' ? '✓ Joined' : '✓ जुड़े हुए हैं') : (language === 'en' ? '+ Join Group' : '+ समूह से जुड़ें')}
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      setSelectedGroupId(group.id);
-                      setActiveMainTab('discussions');
-                    }}
-                    className="py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer"
-                  >
-                    {language === 'en' ? 'View Posts' : 'पोस्ट देखें'}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+              ))}
+            </div>
+          )}
         </div>
       )}
 
-      {/* --- TAB 3: STUDY PARTNER MATCHING --- */}
+      {/* TAB 3: STUDY PARTNER MATCHING */}
       {activeMainTab === 'partners' && (
         <div className="space-y-4">
-          {/* Partner Match Filter Banner */}
-          <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200/90 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2">
-              <span className="font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
-                <Filter className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                {language === 'en' ? 'Filter Partners:' : 'फ़िल्टर:'}
-              </span>
-
               <select
                 value={partnerTargetFilter}
                 onChange={(e) => setPartnerTargetFilter(e.target.value)}
-                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs"
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
               >
-                <option value="all">{language === 'en' ? 'All Attempts' : 'सभी सत्र'}</option>
+                <option value="all">All Attempts</option>
                 <option value="January 2027">January 2027</option>
                 <option value="May 2027">May 2027</option>
-                <option value="Dec 2026">Dec 2026</option>
               </select>
 
               <select
                 value={partnerWeakFilter}
                 onChange={(e) => setPartnerWeakFilter(e.target.value)}
-                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs"
+                className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
               >
-                <option value="all">{language === 'en' ? 'All Subjects' : 'सभी विषय'}</option>
+                <option value="all">All Subjects</option>
                 <option value="paper1">Paper 1: Accounting</option>
                 <option value="paper2">Paper 2: Law</option>
                 <option value="paper3">Paper 3: Maths/Stats</option>
                 <option value="paper4">Paper 4: Economics</option>
               </select>
             </div>
-
-            <div className="text-[11px] text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              <span>{language === 'en' ? 'Peer Matching Safe: Phone numbers hidden' : 'सुरक्षित मैचिंग: फोन नंबर पूर्णतः गुप्त'}</span>
-            </div>
+            <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold">
+              Phone numbers & emails strictly private
+            </span>
           </div>
 
-          {/* Partner Profiles Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredPartners.map((sp) => (
               <div
                 key={sp.id}
-                className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-blue-300 dark:hover:border-blue-600 transition-all flex flex-col justify-between space-y-4"
+                className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 flex flex-col justify-between space-y-4"
               >
                 <div>
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div>
                       <h3 className="font-bold text-slate-900 dark:text-white text-base">{sp.studentName}</h3>
-                      <span className="text-[11px] text-slate-500 dark:text-slate-400">📍 {sp.city} • 🎯 {sp.targetAttempt}</span>
+                      <span className="text-[11px] text-slate-500">{sp.city} • {sp.targetAttempt}</span>
                     </div>
-                    <span className="w-8 h-8 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-900/60 flex items-center justify-center font-bold text-xs">
+                    <span className="w-8 h-8 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 flex items-center justify-center font-bold text-xs">
                       {sp.studyHoursPerDay}h
                     </span>
                   </div>
-
-                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed mb-3 italic">
-                    "{sp.bio}"
-                  </p>
-
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mb-3 italic">"{sp.bio}"</p>
                   <div className="space-y-1.5 text-xs">
-                    <div className="flex justify-between p-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/60 text-emerald-950 dark:text-emerald-200 font-semibold">
-                      <span>{language === 'en' ? 'Strong In:' : 'मजबूत विषय:'}</span>
+                    <div className="flex justify-between p-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/40 font-semibold">
+                      <span>Strong In:</span>
                       <span>{sp.strongSubject.toUpperCase()}</span>
                     </div>
-                    <div className="flex justify-between p-2 rounded-lg bg-amber-50/70 dark:bg-amber-950/40 border border-amber-200/60 dark:border-amber-800/60 text-amber-950 dark:text-amber-200 font-semibold">
-                      <span>{language === 'en' ? 'Looking to Learn:' : 'सीखना चाहते हैं:'}</span>
+                    <div className="flex justify-between p-2 rounded-lg bg-amber-50/70 dark:bg-amber-950/40 font-semibold">
+                      <span>Revising:</span>
                       <span>{sp.weakSubject.toUpperCase()}</span>
-                    </div>
-                    <div className="flex justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                      <span>{language === 'en' ? 'Preferred Slot:' : 'अध्ययन समय:'}</span>
-                      <span>{sp.preferredTime}</span>
                     </div>
                   </div>
                 </div>
-
                 <button
                   onClick={() => handleConnectPartner(sp.id)}
-                  className={`w-full py-2.5 rounded-xl font-bold text-xs transition-all cursor-pointer ${
-                    sp.connected
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'bg-blue-600 hover:bg-blue-700 text-white shadow-xs'
+                  className={`w-full py-2.5 rounded-xl font-bold text-xs cursor-pointer ${
+                    sp.connected ? 'bg-emerald-600 text-white' : 'bg-blue-600 hover:bg-blue-700 text-white'
                   }`}
                 >
-                  {sp.connected ? (language === 'en' ? '✓ Partner Connected' : '✓ पार्टनर जुड़ गए') : (language === 'en' ? 'Send Study Invite' : 'अध्ययन आमंत्रण भेजें')}
+                  {sp.connected ? 'Connected ✓' : 'Send Study Invite'}
                 </button>
               </div>
             ))}
@@ -774,116 +711,67 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
         </div>
       )}
 
-      {/* --- ASK DOUBT / NEW POST MODAL --- */}
+      {/* NEW POST MODAL */}
       {showNewPostModal && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative">
             <button
               onClick={() => setShowNewPostModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
-
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">
-              {language === 'en' ? 'Post Question / Discussion' : 'प्रश्न या चर्चा पोस्ट करें'}
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-              {language === 'en' ? 'Share your doubt with Foundation peer students and mentors' : 'अपनी शंका साथी छात्रों और मेंटर के साथ साझा करें'}
-            </p>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">Ask Doubt in Common Community</h3>
+            <p className="text-xs text-slate-500 mb-4">Posted to {commonGroup.name.en}</p>
 
             <form onSubmit={handleCreatePost} className="space-y-3.5 text-xs">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  {language === 'en' ? 'Select Community Group' : 'कम्युनिटी ग्रुप चुनें'} *
-                </label>
+              <input
+                type="text"
+                required
+                placeholder="Doubt title (e.g. BRS Unfavorable Balance adjustment)"
+                value={postTitle}
+                onChange={(e) => setPostTitle(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
+              />
+              <textarea
+                required
+                rows={3}
+                placeholder="Describe where you are stuck..."
+                value={postContent}
+                onChange={(e) => setPostContent(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              />
+              <div className="grid grid-cols-2 gap-3">
                 <select
-                  value={postGroupId}
-                  onChange={(e) => setPostGroupId(e.target.value)}
-                  className="w-full px-2.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium focus:outline-blue-500"
+                  value={postPaper}
+                  onChange={(e) => setPostPaper(e.target.value as PaperId)}
+                  className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                 >
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name[language]}
+                  <option value="">General</option>
+                  {PAPERS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.code}: {p.name.en}
                     </option>
                   ))}
                 </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  {language === 'en' ? 'Doubt Question / Title' : 'प्रश्न शीर्षक'} *
-                </label>
                 <input
                   type="text"
-                  required
-                  placeholder="e.g. How to rectify one-sided error in Purchase Day Book?"
-                  value={postTitle}
-                  onChange={(e) => setPostTitle(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-sm focus:outline-blue-500"
+                  placeholder="Tags (comma separated)"
+                  value={postTagInput}
+                  onChange={(e) => setPostTagInput(e.target.value)}
+                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
                 />
               </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  {language === 'en' ? 'Detailed Explanation / Question Text' : 'विस्तृत प्रश्न विवरण'} *
-                </label>
-                <textarea
-                  required
-                  rows={3}
-                  placeholder="Paste question details or where you are getting stuck..."
-                  value={postContent}
-                  onChange={(e) => setPostContent(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white text-xs focus:outline-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    {language === 'en' ? 'Subject Paper' : 'विषय'}
-                  </label>
-                  <select
-                    value={postPaper}
-                    onChange={(e) => setPostPaper(e.target.value as PaperId)}
-                    className="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
-                  >
-                    <option value="">General</option>
-                    {PAPERS.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.code}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    {language === 'en' ? 'Tags (comma separated)' : 'टैग (कॉमा से अलग)'}
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. TVM, Calculator, Law"
-                    value={postTagInput}
-                    onChange={(e) => setPostTagInput(e.target.value)}
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setShowNewPostModal(false)}
-                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                  className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
                 >
-                  {language === 'en' ? 'Cancel' : 'रद्द करें'}
+                  Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold shadow-xs cursor-pointer"
-                >
-                  {language === 'en' ? 'Post Question' : 'पोस्ट करें'}
+                <button type="submit" className="px-4 py-2 rounded-lg bg-blue-600 text-white font-bold cursor-pointer">
+                  Post Question
                 </button>
               </div>
             </form>
@@ -891,61 +779,41 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
         </div>
       )}
 
-      {/* --- REPORT DIALOG MODAL --- */}
+      {/* REPORT MODAL */}
       {reportTarget && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative animate-in fade-in zoom-in-95 duration-150 text-xs">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-1 flex items-center gap-1.5 text-rose-600 dark:text-rose-400">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 dark:border-slate-800 text-xs">
+            <h3 className="text-base font-bold text-rose-600 flex items-center gap-1.5 mb-2">
               <AlertTriangle className="w-4 h-4" />
-              {language === 'en' ? 'Report Content to Moderators' : 'मॉडरेटर को शिकायत भेजें'}
+              Report Post to Admin
             </h3>
-            <p className="text-slate-500 dark:text-slate-400 mb-3 line-clamp-1">
-              "{reportTarget.title}"
-            </p>
-
             <form onSubmit={handleSubmitReport} className="space-y-3">
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  {language === 'en' ? 'Reason' : 'कारण'}
-                </label>
-                <select
-                  value={reportReason}
-                  onChange={(e) => setReportReason(e.target.value)}
-                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
-                >
-                  <option value="Spam or advertising">Spam or advertising</option>
-                  <option value="Off-topic / Wrong group">Off-topic / Wrong group</option>
-                  <option value="Abusive or disrespectful language">Abusive or disrespectful language</option>
-                  <option value="Inaccurate ICAI question citation">Inaccurate ICAI question citation</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  {language === 'en' ? 'Additional Details' : 'अतिरिक्त विवरण'}
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Optional context for admins..."
-                  value={reportDetails}
-                  onChange={(e) => setReportDetails(e.target.value)}
-                  className="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <select
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                className="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              >
+                <option value="Spam or advertising">Spam or advertising</option>
+                <option value="Abusive or disrespectful language">Abusive or disrespectful language</option>
+                <option value="Inaccurate ICAI citation">Inaccurate ICAI citation</option>
+              </select>
+              <textarea
+                rows={2}
+                placeholder="Additional context..."
+                value={reportDetails}
+                onChange={(e) => setReportDetails(e.target.value)}
+                className="w-full px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+              />
+              <div className="flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setReportTarget(null)}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
                 >
-                  {language === 'en' ? 'Cancel' : 'रद्द करें'}
+                  Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold cursor-pointer"
-                >
-                  {language === 'en' ? 'Submit Report' : 'शिकायत दर्ज करें'}
+                <button type="submit" className="px-4 py-1.5 rounded-lg bg-rose-600 text-white font-bold cursor-pointer">
+                  Submit Report
                 </button>
               </div>
             </form>

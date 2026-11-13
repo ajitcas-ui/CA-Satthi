@@ -23,6 +23,7 @@ interface MembershipLockScreenProps {
   membershipStatus: MembershipStatus;
   expiresAt?: string;
   onOpenPaymentModal: () => void;
+  onOpenAuthModal?: () => void;
   onGoHome: () => void;
   sectionName?: { en: string; hi: string };
 }
@@ -33,9 +34,11 @@ export const MembershipLockScreen: React.FC<MembershipLockScreenProps> = ({
   membershipStatus,
   expiresAt,
   onOpenPaymentModal,
+  onOpenAuthModal,
   onGoHome,
   sectionName,
 }) => {
+  const isGuest = !currentUser || currentUser.id === 'guest';
   const isPending = membershipStatus === 'pending';
   const isExpired = membershipStatus === 'expired';
 
@@ -56,7 +59,7 @@ export const MembershipLockScreen: React.FC<MembershipLockScreenProps> = ({
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider mb-4 border shadow-2xs">
           {isPending ? (
             <span className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200 border-amber-300 dark:border-amber-800 flex items-center gap-1.5 px-2 py-0.5 rounded-full">
-              <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+              <Clock className="w-3.5 h-3.5 text-amber-600" />
               <span>{language === 'en' ? 'Verification Pending' : 'सत्यापन प्रक्रियाधीन'}</span>
             </span>
           ) : isExpired ? (
@@ -178,26 +181,36 @@ export const MembershipLockScreen: React.FC<MembershipLockScreenProps> = ({
           <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span className="font-semibold text-slate-800 dark:text-slate-200">
-              {language === 'en' ? 'Subject-wise Discussion Groups' : 'विषयवार छात्र परिचर्चा ग्रुप'}
+              {language === 'en' ? 'CA Saathi Common Study Group & Live Room' : 'सामान्य विद्यार्थी अध्ययन समूह एवं लाइव रूम'}
             </span>
           </div>
         </div>
 
         {/* CTA Buttons */}
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3 max-w-md mx-auto">
-          <button
-            onClick={handlePayClick}
-            className="w-full sm:flex-1 py-3 px-6 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black text-sm shadow-lg shadow-blue-500/25 transition-transform active:scale-95 cursor-pointer flex items-center justify-center gap-2"
-          >
-            <CreditCard className="w-4 h-4" />
-            <span>
-              {isPending
-                ? (language === 'en' ? 'Check Payment Status' : 'भुगतान स्थिति देखें')
-                : isExpired
-                  ? (language === 'en' ? 'Renew for ₹5 / Month' : '₹5 में नवीनीकृत करें')
-                  : (language === 'en' ? 'Pay ₹5 & Unlock Access' : '₹5 का भुगतान कर अनलॉक करें')}
-            </span>
-          </button>
+          {isGuest && onOpenAuthModal ? (
+            <button
+              onClick={onOpenAuthModal}
+              className="w-full sm:flex-1 py-3 px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>{language === 'en' ? 'Sign In with Google to Unlock' : 'अनलॉक हेतु गूगल से साइन इन करें'}</span>
+            </button>
+          ) : (
+            <button
+              onClick={handlePayClick}
+              className="w-full sm:flex-1 py-3 px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
+            >
+              <CreditCard className="w-4 h-4" />
+              <span>
+                {isPending
+                  ? (language === 'en' ? 'Check Payment Status' : 'भुगतान स्थिति देखें')
+                  : isExpired
+                    ? (language === 'en' ? 'Renew for ₹5 / Month' : '₹5 में नवीनीकृत करें')
+                    : (language === 'en' ? 'Pay ₹5 & Unlock Access' : '₹5 का भुगतान कर अनलॉक करें')}
+              </span>
+            </button>
+          )}
 
           <button
             onClick={onGoHome}

@@ -1,6 +1,10 @@
 import { MCQQuestion } from '../types';
+import { QUESTIONS_P1 } from './questionsP1';
+import { QUESTIONS_P2 } from './questionsP2';
+import { QUESTIONS_P3 } from './questionsP3';
+import { QUESTIONS_P4 } from './questionsP4';
 
-export const MOCK_QUESTIONS: MCQQuestion[] = [
+const BASE_MOCK_QUESTIONS: MCQQuestion[] = [
   // =========================================================================
   // SECTION 1: PAPER 1 - ACCOUNTING
   // =========================================================================
@@ -797,10 +801,10 @@ export const MOCK_QUESTIONS: MCQQuestion[] = [
   {
     id: 'icai_mod_p3_02',
     paperId: 'paper3',
-    chapterId: 'ch_p3_10',
+    chapterId: 'ch_p3_14',
     chapterTitle: {
-      en: 'Chapter 10: Measures of Central Tendency & Dispersion',
-      hi: 'अध्याय 10: केंद्रीय प्रवृत्ति एवं विक्षेपण के माप',
+      en: 'Chapter 14: Measures of Central Tendency & Dispersion',
+      hi: 'अध्याय 14: केंद्रीय प्रवृत्ति एवं विक्षेपण के माप',
     },
     difficulty: 'medium',
     question: {
@@ -843,10 +847,10 @@ export const MOCK_QUESTIONS: MCQQuestion[] = [
   {
     id: 'icai_mod_p3_03',
     paperId: 'paper3',
-    chapterId: 'ch_p3_12',
+    chapterId: 'ch_p3_17',
     chapterTitle: {
-      en: 'Chapter 12: Correlation and Regression',
-      hi: 'अध्याय 12: सहसंबंध एवं प्रतीपगमन',
+      en: 'Chapter 17: Correlation and Regression',
+      hi: 'अध्याय 17: सहसंबंध एवं प्रतीपगमन',
     },
     difficulty: 'hard',
     question: {
@@ -917,10 +921,10 @@ export const MOCK_QUESTIONS: MCQQuestion[] = [
   {
     id: 'icai_pyq_p3_dec2023_01',
     paperId: 'paper3',
-    chapterId: 'ch_p3_10',
+    chapterId: 'ch_p3_14',
     chapterTitle: {
-      en: 'Statistics - Measures of Central Tendency',
-      hi: 'सांख्यिकी - केंद्रीय प्रवृत्ति के माप',
+      en: 'Measures of Central Tendency and Dispersion',
+      hi: 'केंद्रीय प्रवृत्ति एवं विक्षेपण के माप',
     },
     difficulty: 'medium',
     question: {
@@ -963,7 +967,7 @@ export const MOCK_QUESTIONS: MCQQuestion[] = [
   {
     id: 'icai_pyq_p3_june2023_01',
     paperId: 'paper3',
-    chapterId: 'ch_p3_08',
+    chapterId: 'ch_p3_12',
     chapterTitle: {
       en: 'Logical Reasoning - Blood Relations',
       hi: 'तार्किक तर्क - रक्त संबंध',
@@ -1097,10 +1101,10 @@ export const MOCK_QUESTIONS: MCQQuestion[] = [
   {
     id: 'icai_mod_p4_03',
     paperId: 'paper4',
-    chapterId: 'ch_p4_05',
+    chapterId: 'ch_p4_06',
     chapterTitle: {
-      en: 'Chapter 5: Determination of National Income',
-      hi: 'अध्याय 5: राष्ट्रीय आय का निर्धारण',
+      en: 'Chapter 6: Determination of National Income',
+      hi: 'अध्याय 6: राष्ट्रीय आय का निर्धारण',
     },
     difficulty: 'hard',
     question: {
@@ -1237,7 +1241,7 @@ export const MOCK_QUESTIONS: MCQQuestion[] = [
   {
     id: 'icai_pyq_p4_dec2022_01',
     paperId: 'paper4',
-    chapterId: 'ch_p4_09',
+    chapterId: 'ch_p4_05',
     chapterTitle: {
       en: 'Business Cycles & Macro Indicators',
       hi: 'व्यापार चक्र एवं समष्टि संकेतक',
@@ -1281,3 +1285,12 @@ export const MOCK_QUESTIONS: MCQQuestion[] = [
     officialSourceLink: 'https://www.icai.org/post/question-papers-foundation-course',
   },
 ];
+
+export const MOCK_QUESTIONS: MCQQuestion[] = [
+  ...BASE_MOCK_QUESTIONS,
+  ...QUESTIONS_P1,
+  ...QUESTIONS_P2,
+  ...QUESTIONS_P3,
+  ...QUESTIONS_P4,
+];
+

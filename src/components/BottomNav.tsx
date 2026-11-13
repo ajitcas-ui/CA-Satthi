@@ -1,22 +1,24 @@
 import React, { useState } from 'react';
 import { Language, NavTab, UserProfile } from '../types';
-import { 
-  Home, 
-  Sparkles, 
-  Sparkle, 
-  HelpCircle, 
-  Award, 
-  Trophy, 
-  Users, 
-  CalendarCheck, 
-  FileText, 
-  Bell, 
-  Shield, 
-  MoreHorizontal, 
+import {
+  Home,
+  Sparkles,
+  Sparkle,
+  HelpCircle,
+  Award,
+  Trophy,
+  Users,
+  CalendarCheck,
+  FileText,
+  Bell,
+  Shield,
+  MoreHorizontal,
   X,
   CreditCard,
-  Gift
+  Gift,
+  BarChart3,
 } from 'lucide-react';
+import { canUserAccessAdmin } from '../utils/membershipRules';
 
 interface BottomNavProps {
   activeTab: NavTab;
@@ -24,6 +26,7 @@ interface BottomNavProps {
   language: Language;
   hasUnreadUpdates?: boolean;
   currentUser?: UserProfile;
+  isEmailVerified?: boolean;
   onOpenPaymentModal?: () => void;
   onOpenReferralModal?: () => void;
 }
@@ -34,10 +37,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   language,
   hasUnreadUpdates = true,
   currentUser,
+  isEmailVerified = true,
   onOpenPaymentModal,
   onOpenReferralModal,
 }) => {
   const [showMoreSheet, setShowMoreSheet] = useState(false);
+  const isOwner = canUserAccessAdmin(currentUser, isEmailVerified);
 
   const primaryItems = [
     {
@@ -46,29 +51,45 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       icon: Home,
     },
     {
-      id: 'dailyChallenge' as NavTab,
-      label: { en: 'Daily 10', hi: 'दैनिक 10' },
-      icon: Sparkles,
-      highlight: true,
-    },
-    {
-      id: 'doubtSolver' as NavTab,
-      label: { en: 'AI Solver', hi: 'एआई सॉल्वर' },
-      icon: Sparkle,
-      highlight: true,
-    },
-    {
       id: 'practice' as NavTab,
       label: { en: 'Practice', hi: 'अभ्यास' },
       icon: HelpCircle,
+    },
+    {
+      id: 'progress' as NavTab,
+      label: { en: 'Tracker', hi: 'ट्रैकर' },
+      icon: BarChart3,
+    },
+    {
+      id: 'community' as NavTab,
+      label: { en: 'Community', hi: 'कम्युनिटी' },
+      icon: Users,
     },
   ];
 
   const secondaryItems = [
     {
+      id: 'planner' as NavTab,
+      label: { en: 'Syllabus & Planner', hi: 'पाठ्यक्रम व प्लानर' },
+      description: { en: 'All 46 chapters, checklist & Pomodoro', hi: 'सभी 46 अध्याय एवं पोमोडोरो' },
+      icon: CalendarCheck,
+    },
+    {
+      id: 'dailyChallenge' as NavTab,
+      label: { en: 'Daily 10 Quiz', hi: 'दैनिक 10 प्रश्न' },
+      description: { en: '10 daily bilingual MCQs & streak', hi: 'दैनिक 10 प्रश्न व स्ट्रीक' },
+      icon: Sparkles,
+    },
+    {
+      id: 'doubtSolver' as NavTab,
+      label: { en: 'AI Doubt Solver', hi: 'एआई शंका समाधान' },
+      description: { en: 'Step-by-step concept solutions', hi: 'चरणबद्ध समाधान' },
+      icon: Sparkle,
+    },
+    {
       id: 'mocks' as NavTab,
       label: { en: 'Mock Tests', hi: 'मॉक टेस्ट' },
-      description: { en: 'Real exam timer & speed tests', hi: 'वास्तविक परीक्षा टाइमर' },
+      description: { en: 'Real exam timer & Jan 2027 mocks', hi: 'जनवरी 2027 मॉक परीक्षा' },
       icon: Award,
     },
     {
@@ -76,18 +97,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       label: { en: 'AIR Rankings', hi: 'ऑल इंडिया रैंकिंग' },
       description: { en: 'National leaderboard & badges', hi: 'देशव्यापी रैंकिंग व पदक' },
       icon: Trophy,
-    },
-    {
-      id: 'community' as NavTab,
-      label: { en: 'Community Hub', hi: 'कम्युनिटी हब' },
-      description: { en: '7 active study groups & doubt chat', hi: 'विषयवार ग्रुप व परिचर्चा' },
-      icon: Users,
-    },
-    {
-      id: 'planner' as NavTab,
-      label: { en: 'Study Planner', hi: 'स्टडी प्लानर' },
-      description: { en: 'Daily targets & Pomodoro clock', hi: 'दैनिक लक्ष्य एवं पोमोडोरो' },
-      icon: CalendarCheck,
     },
     {
       id: 'notes' as NavTab,
@@ -104,12 +113,11 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     },
   ];
 
-  // Super Admin item - strictly restricted to authorized administrator ajitsinghca9@gmail.com
-  if (currentUser?.role === 'admin' && currentUser?.email?.toLowerCase() === 'ajitsinghca9@gmail.com') {
+  if (isOwner) {
     secondaryItems.push({
       id: 'admin' as NavTab,
-      label: { en: 'Super Admin', hi: 'सुपर एडमिन' },
-      description: { en: 'Manage payments, students, questions & reports', hi: 'भुगतान, छात्र, प्रश्न एवं रिपोर्ट नियंत्रण' },
+      label: { en: 'Owner Dashboard', hi: 'ओनर डैशबोर्ड' },
+      description: { en: 'Separate private control panel', hi: 'निजी ओनर नियंत्रण कक्ष' },
       icon: Shield,
     });
   }
@@ -123,136 +131,129 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 
   return (
     <>
-      {/* Mobile Bottom Navigation Bar */}
-      <nav 
-        aria-label="Mobile navigation" 
-        className="xl:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 px-2 py-1 shadow-lg transition-colors duration-200"
+      <nav
+        aria-label="Mobile navigation"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 h-14 bg-white/98 dark:bg-slate-900/98 border-t border-slate-200 dark:border-slate-800 px-2 transition-colors duration-200"
       >
-        <div className="flex items-center justify-between max-w-lg mx-auto">
+        <div className="flex items-center justify-between max-w-lg mx-auto h-full">
           {primaryItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
             return (
               <button
                 key={item.id}
+                type="button"
                 onClick={() => handleSelectTab(item.id)}
-                className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-lg transition-all relative cursor-pointer ${
-                  isActive 
-                    ? 'text-blue-700 dark:text-blue-400 font-bold' 
-                    : item.highlight
-                      ? 'text-purple-600 dark:text-purple-400 font-semibold'
-                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
+                className={`flex flex-col items-center justify-center flex-1 h-full px-1 transition-colors cursor-pointer ${
+                  isActive
+                    ? 'text-blue-700 dark:text-blue-400 font-semibold'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
                 }`}
               >
-                <div className="relative">
-                  <Icon 
-                    className={`w-5 h-5 transition-transform ${
-                      isActive ? 'scale-110 text-blue-600 dark:text-blue-400 stroke-[2.4]' : 'stroke-[1.8]'
-                    }`} 
-                  />
-                  {item.highlight && !isActive && (
-                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                  )}
-                </div>
-                <span className={`text-[10px] mt-0.5 tracking-tight truncate max-w-[58px] ${
-                  isActive ? 'font-bold' : ''
-                }`}>
+                <Icon className={`w-4 h-4 ${isActive ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
+                <span className="text-[11px] mt-0.5 tracking-tight truncate max-w-[64px] whitespace-nowrap">
                   {item.label[language]}
                 </span>
-                {isActive && (
-                  <div className="w-4 h-0.5 bg-blue-600 dark:bg-blue-400 rounded-full mt-0.5" />
-                )}
               </button>
             );
           })}
 
-          {/* More Menu Trigger */}
           <button
+            type="button"
             onClick={() => setShowMoreSheet(true)}
-            className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-lg transition-all relative cursor-pointer ${
-              isSecondaryActive 
-                ? 'text-blue-700 dark:text-blue-400 font-bold' 
+            className={`flex flex-col items-center justify-center flex-1 h-full px-1 transition-colors cursor-pointer ${
+              isSecondaryActive
+                ? 'text-blue-700 dark:text-blue-400 font-semibold'
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
             }`}
           >
-            <div className="relative">
-              <MoreHorizontal className={`w-5 h-5 ${isSecondaryActive ? 'stroke-[2.4]' : 'stroke-[1.8]'}`} />
-              {hasUnreadUpdates && (
-                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-red-500 ring-1 ring-white dark:ring-slate-900" />
-              )}
-            </div>
-            <span className="text-[10px] mt-0.5 tracking-tight font-medium">
+            <MoreHorizontal className={`w-4 h-4 ${isSecondaryActive ? 'stroke-[2.2]' : 'stroke-[1.8]'}`} />
+            <span className="text-[11px] mt-0.5 tracking-tight whitespace-nowrap">
               {language === 'en' ? 'More' : 'अन्य'}
             </span>
-            {isSecondaryActive && (
-              <div className="w-4 h-0.5 bg-blue-600 dark:bg-blue-400 rounded-full mt-0.5" />
-            )}
           </button>
         </div>
       </nav>
 
-      {/* Expanded "More" Bottom Sheet for Mobile */}
       {showMoreSheet && (
-        <div className="xl:hidden fixed inset-0 z-50 flex flex-col justify-end">
-          {/* Backdrop */}
-          <div 
+        <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end">
+          <div
             onClick={() => setShowMoreSheet(false)}
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity animate-in fade-in"
+            className="fixed inset-0 bg-slate-900/65 transition-opacity"
           />
 
-          {/* Content Sheet */}
-          <div className="relative z-10 bg-white dark:bg-slate-900 rounded-t-3xl border-t border-slate-200 dark:border-slate-800 p-5 shadow-2xl max-h-[85vh] overflow-y-auto animate-in slide-in-from-bottom duration-200">
-            {/* Sheet Handle */}
+          <div className="relative z-10 bg-white dark:bg-slate-900 rounded-t-3xl border-t border-slate-200 dark:border-slate-800 p-5 shadow-2xl max-h-[85vh] overflow-y-auto">
             <div className="w-12 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 mx-auto mb-4" />
 
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
                 {language === 'en' ? 'All Learning Modules' : 'सभी अध्ययन मॉड्यूल'}
               </h3>
               <button
+                type="button"
                 onClick={() => setShowMoreSheet(false)}
-                className="p-1 rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                aria-label="Close module menu"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Quick action banners for Payments & Referrals in sheet */}
             <div className="grid grid-cols-2 gap-2.5 my-3">
-              {onOpenPaymentModal && (
+              {isOwner ? (
                 <button
-                  onClick={() => {
-                    setShowMoreSheet(false);
-                    onOpenPaymentModal();
-                  }}
-                  className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-left hover:scale-[1.02] transition-transform"
+                  type="button"
+                  onClick={() => handleSelectTab('admin')}
+                  className="flex items-center gap-2 p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-left cursor-pointer"
                 >
-                  <CreditCard className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <Shield className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
                   <div>
-                    <span className="text-xs font-bold text-emerald-800 dark:text-emerald-200 block">
-                      {language === 'en' ? 'UPI Pass (₹5)' : 'यूपीआई पास (₹5)'}
+                    <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 block">
+                      {language === 'en' ? 'Owner Console' : 'ओनर कंसोल'}
                     </span>
-                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
-                      {language === 'en' ? 'Scan & Unlock' : 'स्कैन व अनलॉक'}
+                    <span className="text-[11px] text-indigo-600 dark:text-indigo-400">
+                      {language === 'en' ? 'Free Unlimited' : 'निःशुल्क प्रवेश'}
                     </span>
                   </div>
                 </button>
+              ) : (
+                onOpenPaymentModal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMoreSheet(false);
+                      onOpenPaymentModal();
+                    }}
+                    className="flex items-center gap-2 p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-left cursor-pointer"
+                  >
+                    <CreditCard className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <div>
+                      <span className="text-xs font-bold text-emerald-800 dark:text-emerald-200 block">
+                        {language === 'en' ? 'UPI Pass (₹5)' : 'यूपीआई पास (₹5)'}
+                      </span>
+                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                        {language === 'en' ? '30 Days Access' : '30 दिन वैधता'}
+                      </span>
+                    </div>
+                  </button>
+                )
               )}
 
               {onOpenReferralModal && (
                 <button
+                  type="button"
                   onClick={() => {
                     setShowMoreSheet(false);
                     onOpenReferralModal();
                   }}
-                  className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-left hover:scale-[1.02] transition-transform"
+                  className="flex items-center gap-2 p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-left cursor-pointer"
                 >
                   <Gift className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                   <div>
                     <span className="text-xs font-bold text-amber-800 dark:text-amber-200 block">
                       {language === 'en' ? 'Refer & Earn' : 'रेफर व अंक'}
                     </span>
-                    <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                    <span className="text-[11px] text-amber-600 dark:text-amber-400 tabular-nums">
                       {currentUser?.referralPoints || 0} pts
                     </span>
                   </div>
@@ -260,7 +261,6 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               )}
             </div>
 
-            {/* Grid of Secondary Modules */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 py-2">
               {secondaryItems.map((item) => {
                 const Icon = item.icon;
@@ -268,30 +268,28 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                 return (
                   <button
                     key={item.id}
+                    type="button"
                     onClick={() => handleSelectTab(item.id)}
-                    className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all ${
+                    className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors cursor-pointer ${
                       isActive
                         ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700'
                         : 'bg-slate-50/70 dark:bg-slate-800/40 border-slate-200/80 dark:border-slate-700/60 hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
                   >
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                      isActive 
-                        ? 'bg-blue-600 text-white shadow-xs' 
-                        : 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 border border-slate-200 dark:border-slate-600'
-                    }`}>
+                    <div
+                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
+                        isActive
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 border border-slate-200 dark:border-slate-600'
+                      }`}
+                    >
                       <Icon className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                          {item.label[language]}
-                        </span>
-                        {item.hasBadge && (
-                          <span className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
-                        )}
-                      </div>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                      <span className="text-xs font-bold text-slate-900 dark:text-white truncate block">
+                        {item.label[language]}
+                      </span>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
                         {item.description[language]}
                       </p>
                     </div>

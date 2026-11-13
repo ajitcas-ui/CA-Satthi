@@ -20,10 +20,41 @@ import {
   AuditLogEntry,
   MembershipStatus,
   SubjectChapter,
-  StudentBadge
+  StudentBadge,
+  StudySession
 } from '../types';
-import { INITIAL_GROUPS, INITIAL_POSTS, INITIAL_STUDY_PARTNERS } from '../data/communityData';
+import { COMMON_GROUP_ID, INITIAL_GROUPS, INITIAL_POSTS, INITIAL_STUDY_PARTNERS } from '../data/communityData';
 import { MOCK_QUESTIONS } from '../data/mockQuestions';
+import { toSubjectChapters } from '../data/syllabusData';
+import { ADMIN_OWNER_EMAIL } from './membershipRules';
+
+export const GUEST_USER: UserProfile = {
+  id: 'guest',
+  name: 'CA Aspirant',
+  email: '',
+  role: 'student',
+  targetAttempt: 'January 2027',
+  targetYear: 2027,
+  city: 'India',
+  phone: '',
+  bio: 'Sign in with Google to track your CA Foundation January 2027 progress and unlock ₹5/month membership.',
+  avatar: '🎓',
+  joinedGroupIds: [COMMON_GROUP_ID],
+  bookmarkedPostIds: [],
+  blockedUserIds: [],
+  privacyHideCity: false,
+  privacyHideAttempt: false,
+  createdAt: '2026-01-01',
+  referralCode: 'CAS-GUEST',
+  referralPoints: 0,
+  hasPaidPass: false,
+  membershipStatus: 'unpaid',
+  paymentReference: 'CAS-2027-GUES',
+  isSuspended: false,
+  dailyGoalMinutes: 120,
+  studyMinutesTotal: 0,
+  studyStreak: 0,
+};
 
 // Preset standard accounts with verified membership profiles
 export const PRESET_USERS: UserProfile[] = [
@@ -142,13 +173,13 @@ export function generateStudentPaymentReference(studentId: string): string {
 
 export function getCurrentUser(): UserProfile {
   const current = getStored<UserProfile | null>(KEYS.CURRENT_USER, null);
-  if (current) {
-    // Auto-migrate missing fields
+  if (current && current.id && current.id !== 'guest') {
+    // Auto-migrate missing fields safely without elevating membership
     if (!current.paymentReference || !current.membershipStatus) {
       const updated: UserProfile = {
         ...current,
         paymentReference: current.paymentReference || generateStudentPaymentReference(current.id),
-        membershipStatus: current.membershipStatus || (current.hasPaidPass ? 'active' : 'unpaid'),
+        membershipStatus: current.membershipStatus || 'unpaid',
         isSuspended: typeof current.isSuspended === 'boolean' ? current.isSuspended : false,
       };
       setStored(KEYS.CURRENT_USER, updated);
@@ -157,10 +188,15 @@ export function getCurrentUser(): UserProfile {
     return current;
   }
 
-  // Default to Priya Sharma as logged in student
-  const defaultUser = PRESET_USERS[0];
-  setStored(KEYS.CURRENT_USER, defaultUser);
-  return defaultUser;
+  return GUEST_USER;
+}
+
+export function clearCurrentUser(): void {
+  try {
+    localStorage.removeItem(KEYS.CURRENT_USER);
+  } catch {
+    // ignore storage restriction
+  }
 }
 
 export function getAllUsers(): UserProfile[] {
@@ -185,12 +221,12 @@ export function getStudentMembershipStatus(
   isSuspended: boolean;
   reason?: string;
 } {
-  if (!user) {
+  if (!user || user.id === 'guest') {
     return { status: 'unpaid', daysRemaining: 0, canAccessPremium: false, isSuspended: false };
   }
 
-  // Super Admin always has full access
-  if (user.role === 'admin' || user.email === 'ajitsinghca9@gmail.com') {
+  // Strictly Owner Super Admin only
+  if (user.role === 'admin' && user.email?.toLowerCase().trim() === ADMIN_OWNER_EMAIL) {
     return {
       status: 'active',
       expiresAt: '2099-12-31T23:59:59',
@@ -211,9 +247,13 @@ export function getStudentMembershipStatus(
     };
   }
 
-  // Retrieve user payments if not provided
-  const userPayments = payments || getUserPaymentHistory(user.id);
-  const approvedPayment = userPayments.find((p) => p.status === 'approved');
+  // Check pending payment claim first (Pending NEVER unlocks paid features)
+  const sourcePayments = payments ?? getPaymentRequests();
+  const userPayments = sourcePayments.filter((p) => p.studentId === user.id);
+  const pendingPayment = userPayments.find((p) => p.status === 'pending');
+  const approvedPayment = [...userPayments]
+    .filter((p) => p.status === 'approved')
+    .sort((a, b) => new Date(b.unlockedUntil || b.createdAt).getTime() - new Date(a.unlockedUntil || a.createdAt).getTime())[0];
 
   // Check active approved subscription
   const expiryStr = approvedPayment?.unlockedUntil || user.subscriptionExpiresAt || user.passExpiry;
@@ -229,7 +269,7 @@ export function getStudentMembershipStatus(
         canAccessPremium: true,
         isSuspended: false,
       };
-    } else {
+    } else if (!pendingPayment && user.membershipStatus !== 'pending') {
       return {
         status: 'expired',
         expiresAt: expiryStr,
@@ -241,8 +281,6 @@ export function getStudentMembershipStatus(
     }
   }
 
-  // Check pending payment claim
-  const pendingPayment = userPayments.find((p) => p.status === 'pending');
   if (pendingPayment || user.membershipStatus === 'pending') {
     return {
       status: 'pending',
@@ -468,12 +506,12 @@ export function updateUserProfile(updates: Partial<UserProfile>): UserProfile {
 // STUDENT COMMUNITY (GROUPS & POSTS)
 // ============================================================================
 
-const ALLOWED_GROUP_IDS = ['grp_accounts', 'grp_law', 'grp_maths', 'grp_economics'];
+const ALLOWED_GROUP_IDS = [COMMON_GROUP_ID];
 
 export function getGroups(): CommunityGroup[] {
   const stored = getStored<CommunityGroup[]>(KEYS.GROUPS, INITIAL_GROUPS);
   const filtered = stored.filter((g) => ALLOWED_GROUP_IDS.includes(g.id));
-  return filtered.length === 4 ? filtered : INITIAL_GROUPS;
+  return filtered.length === 1 ? filtered : INITIAL_GROUPS;
 }
 
 export function toggleJoinGroup(groupId: string): CommunityGroup[] {
@@ -823,17 +861,17 @@ export function toggleReminderCompleted(id: string): RevisionReminder[] {
 // ============================================================================
 
 export const DEFAULT_PRICING_CONFIG = {
-  freeTierActive: true,
-  nominalFeeEnabled: false,
+  freeTierActive: false,
+  nominalFeeEnabled: true,
   testPassPriceInRupees: 5,
-  monthlyAccessPriceInRupees: 49,
-  freeMockTestsLimit: 20,
+  monthlyAccessPriceInRupees: 5,
+  freeMockTestsLimit: 0,
   currency: 'INR',
   announcementNote: {
-    en: 'CA Saathi is currently 100% Free for all CA Foundation aspirants. Quality education for every student!',
-    hi: 'सीए साथी वर्तमान में सभी सीए फाउंडेशन विद्यार्थियों के लिए 100% निःशुल्क है। हर विद्यार्थी के लिए गुणवत्तापूर्ण शिक्षा!',
+    en: 'CA Saathi Monthly Membership is ₹5/month (30 days) via verified UPI QR payment.',
+    hi: 'सीए साथी मासिक सदस्यता केवल ₹5/माह (30 दिन) सत्यापित UPI भुगतान द्वारा उपलब्ध है।',
   },
-  paymentGatewayActive: false,
+  paymentGatewayActive: true,
 };
 
 export function getPricingConfig() {
@@ -855,10 +893,16 @@ export const DEFAULT_UPI_CONFIG: UpiConfig = {
   monthlyAmount: 5,
   qrCodeImageUrl: '/original-upi-qr.png',
   instructions: {
-    en: 'Scan the original UPI QR code using PhonePe, Google Pay, Paytm, BHIM, or any UPI app. Pay ₹5, enter your 12-digit UTR number and registered mobile number, then upload a screenshot of your payment receipt. Verification is conducted manually by admin against actual bank records.',
-    hi: 'PhonePe, Google Pay, Paytm, BHIM या किसी भी यूपीआई ऐप से मूल क्यूआर कोड स्कैन करें। ₹5 का भुगतान करें, अपना 12 अंकों का UTR नंबर और पंजीकृत मोबाइल नंबर दर्ज करें और रसीद का स्क्रीनशॉट संलग्न करें। सत्यापन एडमिन द्वारा बैंक रिकॉर्ड से किया जाएगा।',
+    en: 'Scan the original UPI QR code using PhonePe, Google Pay, Paytm, BHIM, or any UPI app. Pay ₹5 for 30 days full access, enter your 12-digit UTR / Transaction ID, and upload your payment receipt screenshot. Access unlocks immediately once Admin verifies.',
+    hi: 'PhonePe, Google Pay, Paytm, BHIM या किसी भी यूपीआई ऐप से मूल क्यूआर कोड स्कैन करें। 30 दिनों के पूर्ण एक्सेस हेतु ₹5 का भुगतान करें, अपना 12 अंकों का UTR नंबर दर्ज करें और रसीद का स्क्रीनशॉट अपलोड करें। एडमिन सत्यापन के तुरंत बाद प्रीमियम एक्सेस चालू होगा।',
   },
 };
+
+const RECEIPT_SVG_DATA_URI =
+  'data:image/svg+xml;utf8,' +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="420" height="240" viewBox="0 0 420 240"><rect width="420" height="240" rx="16" fill="#F8FAFC"/><rect x="20" y="20" width="380" height="200" rx="12" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2"/><text x="40" y="62" font-family="sans-serif" font-size="18" font-weight="bold" fill="#0F172A">UPI Payment Receipt (Sample Proof)</text><text x="40" y="96" font-family="sans-serif" font-size="15" fill="#16A34A">Paid Rs. 5.00 to Ajeet Patel</text><text x="40" y="126" font-family="monospace" font-size="14" fill="#475569">UPI ID: ajeet345@ptyes</text><text x="40" y="156" font-family="monospace" font-size="13" fill="#64748B">UTR Ref: Sample Record Preview</text></svg>'
+  );
 
 export const INITIAL_PAYMENT_REQUESTS: PaymentRequest[] = [
   {
@@ -868,9 +912,9 @@ export const INITIAL_PAYMENT_REQUESTS: PaymentRequest[] = [
     studentEmail: 'rohan@example.com',
     studentMobile: '9876543210',
     amount: 5,
-    planType: 'test_pass',
+    planType: 'monthly_access',
     utr: '412890563412',
-    screenshotUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600&auto=format&fit=crop&q=80',
+    screenshotUrl: RECEIPT_SVG_DATA_URI,
     status: 'pending',
     createdAt: '2026-11-09T17:45:00',
   },
@@ -881,11 +925,11 @@ export const INITIAL_PAYMENT_REQUESTS: PaymentRequest[] = [
     studentEmail: 'priya@example.com',
     studentMobile: '9812345678',
     amount: 5,
-    planType: 'test_pass',
+    planType: 'monthly_access',
     utr: '412890563889',
-    screenshotUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600&auto=format&fit=crop&q=80',
+    screenshotUrl: RECEIPT_SVG_DATA_URI,
     status: 'approved',
-    adminNotes: 'Verified with bank transaction record. Single test pass activated.',
+    adminNotes: 'Verified with bank transaction record. 30-day monthly membership activated.',
     reviewedBy: 'Ajeet Patel',
     reviewedAt: '2026-11-09T18:00:00',
     createdAt: '2026-11-09T16:20:00',
@@ -898,9 +942,9 @@ export const INITIAL_PAYMENT_REQUESTS: PaymentRequest[] = [
     studentEmail: 'aman@example.com',
     studentMobile: '9765432100',
     amount: 5,
-    planType: 'test_pass',
+    planType: 'monthly_access',
     utr: '412890000000',
-    screenshotUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600&auto=format&fit=crop&q=80',
+    screenshotUrl: RECEIPT_SVG_DATA_URI,
     status: 'rejected',
     adminNotes: 'Invalid UTR reference: Transaction not found in bank ledger.',
     reviewedBy: 'Ajeet Patel',
@@ -1182,10 +1226,10 @@ export const DEFAULT_EXAM_COUNTDOWN: ExamCountdownConfig = {
   },
   examDate: '2027-01-18T14:00:00',
   targetAttempt: 'January 2027',
-  isDateVerified: true,
+  isDateVerified: false,
   adminAlertNote: {
-    en: 'Official exam schedule for CA Foundation January 2027 announced by ICAI Examination Directorate. Paper 1 & 2: 2:00 PM to 5:00 PM; Paper 3 & 4: 2:00 PM to 4:00 PM.',
-    hi: 'सीए फाउंडेशन जनवरी 2027 परीक्षा हेतु आईसीएआई परीक्षा निदेशालय द्वारा घोषित आधिकारिक परीक्षा कार्यक्रम। पेपर 1 व 2: दोपहर 2 से 5 बजे; पेपर 3 व 4: दोपहर 2 से 4 बजे।',
+    en: 'Official January 2027 timetable is configured by Super Admin upon ICAI notification. Paper 1 & 2: 2:00 PM to 5:00 PM; Paper 3 & 4: 2:00 PM to 4:00 PM.',
+    hi: 'आईसीएआई आधिकारिक अधिसूचना जारी होने पर सुपर एडमिन द्वारा जनवरी 2027 परीक्षा तिथि सत्यापित की जाएगी। पेपर 1 व 2: दोपहर 2 से 5 बजे; पेपर 3 व 4: दोपहर 2 से 4 बजे।',
   },
   verificationSource: {
     en: 'ICAI Official Notification & Directorate of Examination',
@@ -1202,7 +1246,7 @@ export function getExamCountdownConfig(): ExamCountdownConfig {
       ...(config ? config : {}),
       targetAttempt: config?.targetAttempt === 'June 2027' ? 'January 2027' : (config?.targetAttempt || 'January 2027'),
       examName: config?.targetAttempt === 'June 2027' ? DEFAULT_EXAM_COUNTDOWN.examName : (config?.examName || DEFAULT_EXAM_COUNTDOWN.examName),
-      isDateVerified: typeof config?.isDateVerified === 'boolean' ? config.isDateVerified : true,
+      isDateVerified: typeof config?.isDateVerified === 'boolean' ? config.isDateVerified : false,
     };
     saveExamCountdownConfig(updated);
     return updated;
@@ -1283,7 +1327,7 @@ export function getLeaderboardEntries(period: 'all' | 'weekly' | 'monthly' = 'al
     {
       rank: 2,
       studentId: 'usr_priya',
-      studentName: 'Priya Sharma (You)',
+      studentName: 'Priya Sharma',
       avatar: '👩‍🎓',
       targetAttempt: 'January 2027',
       city: 'Jaipur',
@@ -1311,7 +1355,7 @@ export function getLeaderboardEntries(period: 'all' | 'weekly' | 'monthly' = 'al
       studentId: 'usr_rohan',
       studentName: 'Rohan Verma',
       avatar: '👨‍🎓',
-      targetAttempt: 'Dec 2026',
+      targetAttempt: 'January 2027',
       city: 'Lucknow',
       totalPoints: 980,
       testsCompleted: 21,
@@ -1350,7 +1394,7 @@ export function getLeaderboardEntries(period: 'all' | 'weekly' | 'monthly' = 'al
       studentId: 'usr_tarun',
       studentName: 'Tarun Agrawal',
       avatar: '👨‍🎓',
-      targetAttempt: 'Dec 2026',
+      targetAttempt: 'January 2027',
       city: 'Ahmedabad',
       totalPoints: 810,
       testsCompleted: 16,
@@ -1613,58 +1657,25 @@ export function addAdminAuditLog(entry: Omit<AuditLogEntry, 'id' | 'timestamp'>)
 // 8. CONTENT MANAGEMENT: SUBJECTS, CHAPTERS & QUESTIONS
 // ============================================================================
 
-export const INITIAL_SUBJECT_CHAPTERS: SubjectChapter[] = [
-  // Paper 1: Accounting
-  { id: 'ch_p1_01', paperId: 'paper1', chapterNumber: 1, title: { en: 'Theoretical Framework', hi: 'सैद्धांतिक ढांचा' }, questionCount: 15 },
-  { id: 'ch_p1_02', paperId: 'paper1', chapterNumber: 2, title: { en: 'Accounting Process & Journal', hi: 'लेखांकन प्रक्रिया व जर्नल' }, questionCount: 18 },
-  { id: 'ch_p1_03', paperId: 'paper1', chapterNumber: 3, title: { en: 'Bank Reconciliation Statement', hi: 'बैंक समाधान विवरण (BRS)' }, questionCount: 14 },
-  { id: 'ch_p1_04', paperId: 'paper1', chapterNumber: 4, title: { en: 'Inventories Valuation (AS 2)', hi: 'स्टॉक मूल्यांकन (AS 2)' }, questionCount: 12 },
-  { id: 'ch_p1_05', paperId: 'paper1', chapterNumber: 5, title: { en: 'Depreciation and Amortisation', hi: 'मूल्यह्रास एवं परिशोधन' }, questionCount: 16 },
-  { id: 'ch_p1_06', paperId: 'paper1', chapterNumber: 6, title: { en: 'Bills of Exchange & Promissory Notes', hi: 'विप्रत्र व प्रतिज्ञा पत्र' }, questionCount: 10 },
-  { id: 'ch_p1_07', paperId: 'paper1', chapterNumber: 7, title: { en: 'Preparation of Final Accounts', hi: 'अंतिम खातों का निर्माण' }, questionCount: 20 },
-  { id: 'ch_p1_08', paperId: 'paper1', chapterNumber: 8, title: { en: 'Financial Statements of NPO', hi: 'गैर-व्यापारिक संस्थाओं के खाते' }, questionCount: 15 },
-  { id: 'ch_p1_09', paperId: 'paper1', chapterNumber: 9, title: { en: 'Accounts from Incomplete Records', hi: 'अपूर्ण अभिलेखों से खाते' }, questionCount: 12 },
-  { id: 'ch_p1_10', paperId: 'paper1', chapterNumber: 10, title: { en: 'Partnership and LLP Accounts', hi: 'साझेदारी व एलएलपी खाते' }, questionCount: 22 },
-  { id: 'ch_p1_11', paperId: 'paper1', chapterNumber: 11, title: { en: 'Company Accounts (Shares & Debentures)', hi: 'कंपनी खाते (अंश व ऋणपत्र)' }, questionCount: 25 },
-
-  // Paper 2: Business Laws
-  { id: 'ch_p2_01', paperId: 'paper2', chapterNumber: 1, title: { en: 'Indian Regulatory Framework', hi: 'भारतीय नियामक ढांचा' }, questionCount: 10 },
-  { id: 'ch_p2_02', paperId: 'paper2', chapterNumber: 2, title: { en: 'The Indian Contract Act, 1872', hi: 'भारतीय अनुबंध अधिनियम, 1872' }, questionCount: 30 },
-  { id: 'ch_p2_03', paperId: 'paper2', chapterNumber: 3, title: { en: 'The Sale of Goods Act, 1930', hi: 'वस्तु विक्रय अधिनियम, 1930' }, questionCount: 22 },
-  { id: 'ch_p2_04', paperId: 'paper2', chapterNumber: 4, title: { en: 'The Indian Partnership Act, 1932', hi: 'भारतीय साझेदारी अधिनियम, 1932' }, questionCount: 20 },
-  { id: 'ch_p2_05', paperId: 'paper2', chapterNumber: 5, title: { en: 'The Limited Liability Partnership Act, 2008', hi: 'सीमित दायित्व साझेदारी (LLP)' }, questionCount: 15 },
-  { id: 'ch_p2_06', paperId: 'paper2', chapterNumber: 6, title: { en: 'The Companies Act, 2013 (Basics)', hi: 'कंपनी अधिनियम, 2013' }, questionCount: 24 },
-  { id: 'ch_p2_07', paperId: 'paper2', chapterNumber: 7, title: { en: 'The Negotiable Instruments Act, 1881', hi: 'परक्राम्य लिखत अधिनियम, 1881' }, questionCount: 18 },
-
-  // Paper 3: Quantitative Aptitude
-  { id: 'ch_p3_01', paperId: 'paper3', chapterNumber: 1, title: { en: 'Ratio, Proportion, Indices & Logarithms', hi: 'अनुपात, समानुपात, घातांक व लघुगणक' }, questionCount: 25 },
-  { id: 'ch_p3_02', paperId: 'paper3', chapterNumber: 2, title: { en: 'Equations (Linear, Quadratic & Matrices)', hi: 'समीकरण एवं आव्यूह' }, questionCount: 20 },
-  { id: 'ch_p3_03', paperId: 'paper3', chapterNumber: 3, title: { en: 'Linear Inequalities', hi: 'रैखिक असमिकाएं' }, questionCount: 14 },
-  { id: 'ch_p3_04', paperId: 'paper3', chapterNumber: 4, title: { en: 'Mathematics of Finance (TVM)', hi: 'मुद्रा का समय मूल्य (TVM)' }, questionCount: 35 },
-  { id: 'ch_p3_05', paperId: 'paper3', chapterNumber: 5, title: { en: 'Permutations and Combinations', hi: 'क्रमचय एवं संचय' }, questionCount: 18 },
-  { id: 'ch_p3_06', paperId: 'paper3', chapterNumber: 6, title: { en: 'Sequence and Series (AP & GP)', hi: 'समानांतर व गुणोत्तर श्रेणियां' }, questionCount: 20 },
-  { id: 'ch_p3_07', paperId: 'paper3', chapterNumber: 7, title: { en: 'Sets, Relations and Functions', hi: 'समुच्चय, संबंध एवं फलन' }, questionCount: 16 },
-  { id: 'ch_p3_08', paperId: 'paper3', chapterNumber: 8, title: { en: 'Logical Reasoning (Series, Coding, Direction)', hi: 'तार्किक क्षमता (रीजनिंग)' }, questionCount: 25 },
-  { id: 'ch_p3_09', paperId: 'paper3', chapterNumber: 9, title: { en: 'Statistical Description of Data', hi: 'समंकों का सांख्यिकीय वर्णन' }, questionCount: 18 },
-  { id: 'ch_p3_10', paperId: 'paper3', chapterNumber: 10, title: { en: 'Measures of Central Tendency & Dispersion', hi: 'केंद्रीय प्रवृत्ति एवं अपकिरण के माप' }, questionCount: 28 },
-  { id: 'ch_p3_11', paperId: 'paper3', chapterNumber: 11, title: { en: 'Probability and Theoretical Distributions', hi: 'प्रायिकता एवं सैद्धांतिक बंटन' }, questionCount: 24 },
-  { id: 'ch_p3_12', paperId: 'paper3', chapterNumber: 12, title: { en: 'Correlation and Regression', hi: 'सहसंबंध एवं प्रतीपगमन' }, questionCount: 20 },
-  { id: 'ch_p3_13', paperId: 'paper3', chapterNumber: 13, title: { en: 'Index Numbers', hi: 'सूचकांक' }, questionCount: 15 },
-
-  // Paper 4: Business Economics
-  { id: 'ch_p4_01', paperId: 'paper4', chapterNumber: 1, title: { en: 'Introduction to Business Economics', hi: 'व्यावसायिक अर्थशास्त्र का परिचय' }, questionCount: 16 },
-  { id: 'ch_p4_02', paperId: 'paper4', chapterNumber: 2, title: { en: 'Theory of Demand and Supply', hi: 'मांग एवं पूर्ति का सिद्धांत' }, questionCount: 26 },
-  { id: 'ch_p4_03', paperId: 'paper4', chapterNumber: 3, title: { en: 'Theory of Production and Cost', hi: 'उत्पादन एवं लागत का सिद्धांत' }, questionCount: 22 },
-  { id: 'ch_p4_04', paperId: 'paper4', chapterNumber: 4, title: { en: 'Price Determination in Different Markets', hi: 'विभिन्न बाजारों में मूल्य निर्धारण' }, questionCount: 25 },
-  { id: 'ch_p4_05', paperId: 'paper4', chapterNumber: 5, title: { en: 'Determination of National Income', hi: 'राष्ट्रीय आय का निर्धारण' }, questionCount: 20 },
-  { id: 'ch_p4_06', paperId: 'paper4', chapterNumber: 6, title: { en: 'Public Finance & Fiscal Policy', hi: 'लोक वित्त एवं राजकोषीय नीति' }, questionCount: 18 },
-  { id: 'ch_p4_07', paperId: 'paper4', chapterNumber: 7, title: { en: 'Money Market & Monetary Policy', hi: 'मुद्रा बाजार एवं मौद्रिक नीति' }, questionCount: 20 },
-  { id: 'ch_p4_08', paperId: 'paper4', chapterNumber: 8, title: { en: 'International Trade (Theory & Forex)', hi: 'अंतर्राष्ट्रीय व्यापार व विदेशी विनिमय' }, questionCount: 18 },
-  { id: 'ch_p4_09', paperId: 'paper4', chapterNumber: 9, title: { en: 'Indian Economy (Contemporary Issues)', hi: 'भारतीय अर्थव्यवस्था (समकालीन मुद्दे)' }, questionCount: 22 },
-];
+export const INITIAL_SUBJECT_CHAPTERS: SubjectChapter[] = toSubjectChapters();
 
 export function getSubjectChapters(): SubjectChapter[] {
-  return getStored<SubjectChapter[]>('ca_saathi_subject_chapters', INITIAL_SUBJECT_CHAPTERS);
+  const stored = getStored<SubjectChapter[]>('ca_saathi_subject_chapters', INITIAL_SUBJECT_CHAPTERS);
+  // Ensure 46-chapter canonical syllabus if stored version had old incomplete 40 chapters
+  return stored.length >= 46 ? stored : INITIAL_SUBJECT_CHAPTERS;
+}
+
+export function getStudySessionsLocal(userId?: string): StudySession[] {
+  const all = getStored<StudySession[]>('ca_saathi_study_sessions', []);
+  return userId ? all.filter(s => s.userId === userId) : all;
+}
+
+export function saveStudySessionLocal(session: StudySession): StudySession[] {
+  const all = getStored<StudySession[]>('ca_saathi_study_sessions', []);
+  const idx = all.findIndex(s => s.id === session.id);
+  const updated = idx >= 0 ? all.map((s, i) => (i === idx ? session : s)) : [session, ...all.slice(0, 299)];
+  setStored('ca_saathi_study_sessions', updated);
+  return updated;
 }
 
 export function addSubjectChapter(chapter: SubjectChapter, adminName: string): void {

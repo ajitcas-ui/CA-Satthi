@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Language, MockTest, TestAttemptResult, UserProfile, PaymentRequest } from '../types';
 import { MOCK_TESTS } from '../data/mockTests';
 import { calculateQuizScore, ScoreBreakdown } from '../utils/quizEngine';
-import { checkUserHasValidPass, getUserPaymentHistory } from '../utils/storageDb';
+import { checkUserHasValidPass, getStudentMembershipStatus, getUserPaymentHistory } from '../utils/storageDb';
 import { playChimeSound } from '../utils/audio';
 import confetti from 'canvas-confetti';
 import { 
@@ -165,12 +165,12 @@ export const MockTestView: React.FC<MockTestViewProps> = ({
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
             <Award className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            {language === 'en' ? 'CA Foundation Mock Tests' : 'सीए फाउंडेशन मॉक टेस्ट'}
+            {language === 'en' ? 'CA Foundation Mock Tests (Jan 2027)' : 'सीए फाउंडेशन मॉक टेस्ट (जनवरी 2027)'}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
             {language === 'en'
-              ? 'Simulate real ICAI exam environment with timed speed tests and negative marking rules'
-              : 'समयबद्ध गति परीक्षा और -0.25 निगेटिव मार्किंग के साथ वास्तविक परीक्षा अनुभव पाएं'}
+              ? 'Simulate real January 2027 ICAI exam conditions with negative marking (+1 / -0.25)'
+              : 'जनवरी 2027 आईसीएआई परीक्षा प्रारूप और -0.25 निगेटिव मार्किंग के साथ वास्तविक अभ्यास करें'}
           </p>
         </div>
 
@@ -189,7 +189,8 @@ export const MockTestView: React.FC<MockTestViewProps> = ({
 
         {/* Tests Grid */}
         {(() => {
-          const hasPass = currentUser?.role === 'admin' || currentUser?.hasPaidPass || (currentUser?.id ? checkUserHasValidPass(currentUser.id) : false);
+          const membership = currentUser?.id ? getStudentMembershipStatus(currentUser, getUserPaymentHistory(currentUser.id)) : null;
+          const hasPass = Boolean(membership?.canAccessPremium || checkUserHasValidPass(currentUser?.id || ''));
           const userPayments = currentUser?.id ? getUserPaymentHistory(currentUser.id) : [];
           const pendingPayment = userPayments.find(p => p.status === 'pending');
 
@@ -399,8 +400,8 @@ export const MockTestView: React.FC<MockTestViewProps> = ({
           </div>
 
           {/* Countdown Clock */}
-          <div className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-mono font-bold text-sm ${
-            secondsRemaining < 180 ? 'bg-rose-50 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 animate-pulse' : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200'
+          <div className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-mono font-bold text-sm tabular-nums ${
+            secondsRemaining < 180 ? 'bg-rose-50 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200'
           }`}>
             <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
             <span>{formatTime(secondsRemaining)}</span>

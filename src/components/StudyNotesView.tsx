@@ -19,15 +19,17 @@ import {
 
 interface StudyNotesViewProps {
   language: Language;
+  studyNotes?: StudyNote[];
 }
 
-export const StudyNotesView: React.FC<StudyNotesViewProps> = ({ language }) => {
+export const StudyNotesView: React.FC<StudyNotesViewProps> = ({ language, studyNotes }) => {
+  const allNotes = studyNotes && studyNotes.length > 0 ? studyNotes : MOCK_NOTES;
   const [selectedPaper, setSelectedPaper] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLargeFont, setIsLargeFont] = useState(false);
-  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(MOCK_NOTES[0]?.id || null);
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(allNotes[0]?.id || null);
 
-  const filteredNotes = MOCK_NOTES.filter((note) => {
+  const filteredNotes = allNotes.filter((note) => {
     if (selectedPaper !== 'all' && note.paperId !== selectedPaper) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();

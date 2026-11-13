@@ -3,8 +3,15 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'node:fs';
+import { createRequireOwnerAuth, VerifiedOwnerSession } from './src/server/ownerAuth';
 
 dotenv.config();
+
+const firebaseConfigRaw = JSON.parse(
+  fs.readFileSync(path.resolve(process.cwd(), 'firebase-applet-config.json'), 'utf8')
+) as { projectId: string };
+const requireOwnerAuth = createRequireOwnerAuth(firebaseConfigRaw.projectId);
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -12,6 +19,25 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 // Body parser with 20MB limit for image uploads
 app.use(express.json({ limit: '20mb' }));
 app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+
+// ============================================================================
+// SERVER-SIDE PROTECTED OWNER ROUTES (/api/owner/*)
+// ============================================================================
+app.use('/api/owner', requireOwnerAuth);
+
+app.get('/api/owner/session', (req: Request, res: Response) => {
+  const session = (req as Request & { ownerSession?: VerifiedOwnerSession }).ownerSession;
+  return res.json({
+    authorized: true,
+    ownerEmail: session?.email,
+    uid: session?.uid,
+    verifiedAt: new Date().toISOString(),
+  });
+});
+
+app.use('/api/owner', (_req: Request, res: Response) => {
+  return res.status(404).json({ error: 'Owner API endpoint not found.' });
+});
 
 // Subject labels for CA Foundation
 const SUBJECT_LABELS: Record<string, string> = {

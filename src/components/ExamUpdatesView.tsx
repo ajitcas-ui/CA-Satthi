@@ -19,9 +19,11 @@ import {
 
 interface ExamUpdatesViewProps {
   language: Language;
+  examUpdates?: ExamUpdate[];
 }
 
-export const ExamUpdatesView: React.FC<ExamUpdatesViewProps> = ({ language }) => {
+export const ExamUpdatesView: React.FC<ExamUpdatesViewProps> = ({ language, examUpdates }) => {
+  const updatesFeed = examUpdates && examUpdates.length > 0 ? examUpdates : MOCK_EXAM_UPDATES;
   const [selectedUpdate, setSelectedUpdate] = useState<ExamUpdate | null>(null);
   const [expandedFaqId, setExpandedFaqId] = useState<string | null>(EXAM_FAQS[0]?.id || null);
 
@@ -182,7 +184,7 @@ export const ExamUpdatesView: React.FC<ExamUpdatesViewProps> = ({ language }) =>
         </h2>
 
         <div className="space-y-3">
-          {MOCK_EXAM_UPDATES.map((update) => (
+          {updatesFeed.map((update) => (
             <div
               key={update.id}
               className={`p-5 rounded-2xl border transition-all bg-white dark:bg-slate-900 ${

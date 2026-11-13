@@ -3,16 +3,16 @@ import { ExamUpdate } from '../types';
 export const MOCK_EXAM_UPDATES: ExamUpdate[] = [
   {
     id: 'upd_1',
-    date: '10 Nov 2026',
-    category: 'Exam Date',
+    date: 'Jan 2027 Attempt',
+    category: 'Guidance',
     isImportant: true,
     title: {
-      en: 'CA Foundation Upcoming Examination Schedule Announced',
-      hi: 'सीए फाउंडेशन आगामी परीक्षा कार्यक्रम घोषित',
+      en: 'CA Foundation January 2027 Paper Timings & Structure',
+      hi: 'सीए फाउंडेशन जनवरी 2027 परीक्षा पैटर्न व समय',
     },
     summary: {
-      en: 'ICAI releases official schedule for the upcoming CA Foundation session. Papers will commence from 2:00 PM to 5:00 PM for Papers 1 & 2, and 2:00 PM to 4:00 PM for Papers 3 & 4.',
-      hi: 'सीए फाउंडेशन सत्र का आधिकारिक परीक्षा कार्यक्रम जारी। पेपर 1 व 2 दोपहर 2 से 5 बजे तक, तथा पेपर 3 व 4 दोपहर 2 से 4 बजे (2 घंटे) तक आयोजित होंगे।',
+      en: 'Papers 1 & 2 run 2:00 PM–5:00 PM (3 hrs) and Papers 3 & 4 run 2:00 PM–4:00 PM (2 hrs, -0.25 negative marking). Exact verified dates appear on the dashboard once published by Admin.',
+      hi: 'पेपर 1 व 2 दोपहर 2 से 5 बजे (3 घंटे) तथा पेपर 3 व 4 दोपहर 2 से 4 बजे (2 घंटे, -0.25 नकारात्मक अंकन) होते हैं। एडमिन द्वारा सत्यापित तिथि डैशबोर्ड पर प्रदर्शित होगी।',
     },
     detailedContent: {
       en: `Examination Schedule & Timings:

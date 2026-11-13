@@ -17,8 +17,8 @@ export const PAPERS: PaperInfo[] = [
     },
     color: 'from-blue-600 to-indigo-700',
     iconName: 'Calculator',
-    chaptersCount: 10,
-    progressPercent: 68,
+    chaptersCount: 11,
+    progressPercent: 0,
   },
   {
     id: 'paper2',
@@ -37,7 +37,7 @@ export const PAPERS: PaperInfo[] = [
     color: 'from-indigo-600 to-sky-700',
     iconName: 'Scale',
     chaptersCount: 7,
-    progressPercent: 52,
+    progressPercent: 0,
   },
   {
     id: 'paper3',
@@ -55,8 +55,8 @@ export const PAPERS: PaperInfo[] = [
     },
     color: 'from-sky-600 to-cyan-700',
     iconName: 'LineChart',
-    chaptersCount: 14,
-    progressPercent: 44,
+    chaptersCount: 18,
+    progressPercent: 0,
   },
   {
     id: 'paper4',
@@ -75,6 +75,6 @@ export const PAPERS: PaperInfo[] = [
     color: 'from-blue-700 to-teal-700',
     iconName: 'TrendingUp',
     chaptersCount: 10,
-    progressPercent: 74,
+    progressPercent: 0,
   },
 ];

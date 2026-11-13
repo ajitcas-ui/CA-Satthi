@@ -8,7 +8,6 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Helper functions
     function isSignedIn() {
       return request.auth != null;
     }
@@ -29,34 +28,55 @@ service cloud.firestore {
       return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
-    // Admin access check: User email from runtime or verified admin role
+    // Strict owner-only admin gate using verified Firebase Auth email token
     function isAdmin() {
-      return isSignedIn() && (
-        request.auth.token.email == 'ajitsinghca9@gmail.com' ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
-      );
+      return isSignedIn() &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower() == 'ajitsinghca9@gmail.com' &&
+        request.auth.token.email_verified == true;
     }
 
-    // 1. User Profiles: /users/{userId}
+    // 1. User Profiles: /users/{userId} — Strict PII protection
     match /users/{userId} {
-      allow get: if isOwner(userId) || isAdmin() || isSignedIn();
-      allow list: if isSignedIn();
-      
-      // Prevent Self-Assigned Roles: Non-admins can only create as 'student'
-      allow create: if isOwner(userId) && isValidId(userId) &&
+      allow get, list: if isOwner(userId) || isAdmin();
+
+      // Students can only register themselves with 'student' role and unpaid state
+      allow create: if isValidId(userId) && isOwner(userId) &&
         incoming().id == userId &&
         incoming().name is string && incoming().name.size() <= 100 &&
         incoming().email is string && incoming().email.size() <= 150 &&
-        (isAdmin() || incoming().role == 'student');
+        (isAdmin() || (
+          incoming().role == 'student' &&
+          (!('hasPaidPass' in incoming()) || incoming().hasPaidPass == false) &&
+          (!('membershipStatus' in incoming()) || incoming().membershipStatus == 'unpaid') &&
+          (!('isSuspended' in incoming()) || incoming().isSuspended == false)
+        ));
 
-      // User cannot modify their own role; only admins can promote/demote
-      allow update: if isOwner(userId) &&
-        (isAdmin() || incoming().role == existing().role);
+      // Students cannot self-approve membership, extend expiry, change role, or unsuspend themselves
+      allow update: if isValidId(userId) && (
+        isAdmin() || (
+          isOwner(userId) &&
+          !incoming().diff(existing()).affectedKeys().hasAny([
+            'role',
+            'membershipStatus',
+            'hasPaidPass',
+            'subscriptionExpiresAt',
+            'passExpiry',
+            'isSuspended',
+            'suspensionReason',
+            'email',
+            'id',
+            'createdAt'
+          ])
+        )
+      );
 
       allow delete: if isAdmin();
 
-      // Subcollections strictly scoped to the student
+      match /studySessions/{sessionId} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
       match /testResults/{testResultId} {
         allow read, write: if isOwner(userId) || isAdmin();
       }
@@ -80,12 +100,46 @@ service cloud.firestore {
       match /chapterProgress/{chapterId} {
         allow read, write: if isOwner(userId) || isAdmin();
       }
+
+      function isValidAIChatMessage(data) {
+        return data.keys().hasAll(['id', 'userId', 'role', 'content', 'paperId', 'language', 'createdAt']) &&
+          data.keys().hasOnly(['id', 'userId', 'role', 'content', 'paperId', 'language', 'imageUrl', 'createdAt']) &&
+          data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+          data.userId is string && data.userId == userId &&
+          data.role in ['user', 'model'] &&
+          data.content is string && data.content.size() > 0 && data.content.size() <= 16000 &&
+          data.paperId in ['all', 'paper1', 'paper2', 'paper3', 'paper4'] &&
+          data.language in ['en', 'hi', 'hinglish'] &&
+          data.createdAt is string && data.createdAt.size() > 0 && data.createdAt.size() <= 64 &&
+          (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 250000));
+      }
+
+      match /aiChats/{messageId} {
+        allow read: if isOwner(userId) || isAdmin();
+        allow create: if isValidId(messageId) && (
+          isAdmin() || (isOwner(userId) && isValidAIChatMessage(incoming()))
+        );
+        allow update: if isAdmin();
+        allow delete: if isOwner(userId) || isAdmin();
+      }
     }
 
-    // 2. Community Posts: /posts/{postId}
+    // 2. Non-PII Live Study Presence: /studyPresence/{userId}
+    match /studyPresence/{userId} {
+      allow read: if isSignedIn();
+      allow create, update: if isValidId(userId) && isOwner(userId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().displayName is string && incoming().displayName.size() <= 80 &&
+        incoming().isStudying is bool &&
+        !('phone' in incoming()) &&
+        !('email' in incoming());
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // 3. Single Common Student Group Posts & Replies: /posts/{postId}
     match /posts/{postId} {
       allow read: if true;
-      
+
       allow create: if isSignedIn() && isValidId(postId) &&
         incoming().authorId == request.auth.uid &&
         incoming().title is string && incoming().title.size() <= 250 &&
@@ -93,16 +147,13 @@ service cloud.firestore {
 
       allow update: if isAdmin() || (
         isSignedIn() && (
-          // Author editing post
           (existing().authorId == request.auth.uid && incoming().authorId == request.auth.uid) ||
-          // Other students toggling likes or resolving question
-          incoming().diff(existing()).affectedKeys().hasOnly(['likes', 'likedBy', 'isResolved'])
+          incoming().diff(existing()).affectedKeys().hasOnly(['likes', 'likedBy', 'isResolved', 'replies'])
         )
       );
 
       allow delete: if isAdmin() || (isSignedIn() && existing().authorId == request.auth.uid);
 
-      // Replies inside post
       match /replies/{replyId} {
         allow read: if true;
         allow create: if isSignedIn() && isValidId(replyId) &&
@@ -118,7 +169,7 @@ service cloud.firestore {
       }
     }
 
-    // 3. Moderation Reports: /moderationReports/{reportId}
+    // 4. Moderation Reports: /moderationReports/{reportId}
     match /moderationReports/{reportId} {
       allow create: if isSignedIn() && isValidId(reportId) &&
         incoming().reportedByUid == request.auth.uid;
@@ -126,34 +177,82 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // 4. Official Exam Announcements: /examAnnouncements/{announcementId}
+    // 5. Official Exam Announcements: /examAnnouncements/{announcementId}
     match /examAnnouncements/{announcementId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // 5. Payment Requests: /paymentRequests/{paymentId}
-    // PAYMENT SECURITY: Students can submit pending claims; only verified admins can approve or reject
+    // 6. Payment Requests: /paymentRequests/{paymentId}
     match /paymentRequests/{paymentId} {
       allow read: if isAdmin() || (isSignedIn() && resource.data.studentId == request.auth.uid);
       allow create: if isSignedIn() && isValidId(paymentId) &&
         incoming().studentId == request.auth.uid &&
         incoming().status == 'pending' &&
-        incoming().utr is string && incoming().utr.size() >= 8 &&
+        incoming().utr is string && incoming().utr.size() >= 8 && incoming().utr.size() <= 40 &&
         incoming().amount is number && incoming().amount > 0 &&
-        incoming().studentMobile is string && incoming().studentMobile.size() >= 10;
-      allow update: if isAdmin(); // Strictly admin-only approval/rejection
+        incoming().studentMobile is string && incoming().studentMobile.size() >= 10 && incoming().studentMobile.size() <= 15 &&
+        (!('screenshotUrl' in incoming()) || (incoming().screenshotUrl is string && incoming().screenshotUrl.size() <= 750000));
+      allow update, delete: if isAdmin();
+    }
+
+    // 7. Notifications: /notifications/{notifId}
+    match /notifications/{notifId} {
+      allow create: if isSignedIn() && isValidId(notifId) && (
+        isAdmin() ||
+        (incoming().recipientId == 'admin' && incoming().type == 'payment_submitted')
+      );
+      allow read: if isAdmin() || (
+        isSignedIn() && (
+          resource.data.recipientId == request.auth.uid ||
+          resource.data.recipientId == 'all'
+        )
+      );
+      allow update: if isAdmin() || (
+        isSignedIn() && resource.data.recipientId == request.auth.uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['read'])
+      );
       allow delete: if isAdmin();
     }
 
-    // 6. Admin UPI Configuration: /upiConfig/{configId}
+    // 8. Admin Analytics Events: /analyticsEvents/{eventId}
+    match /analyticsEvents/{eventId} {
+      allow create: if isValidId(eventId) &&
+        incoming().eventType in ['visit', 'login', 'signup', 'study_session', 'payment_submit'] &&
+        incoming().visitorId is string && incoming().visitorId.size() <= 80 &&
+        incoming().date is string && incoming().date.size() == 10;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // 9. Admin Audit Logs: /auditLogs/{logId}
+    match /auditLogs/{logId} {
+      allow read, write: if isAdmin();
+    }
+
+    // 10. Admin UPI Configuration: /upiConfig/{configId}
     match /upiConfig/{configId} {
       allow read: if true;
       allow write: if isAdmin();
     }
 
-    // 7. Exam Countdown: /examCountdown/{configId}
+    // 11. Exam Countdown: /examCountdown/{configId}
     match /examCountdown/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // 12. Admin-managed Syllabus Chapters, Questions & Study Materials
+    match /subjectChapters/{chapterId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /customQuestions/{questionId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /studyMaterials/{materialId} {
       allow read: if true;
       allow write: if isAdmin();
     }
