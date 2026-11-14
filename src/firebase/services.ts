@@ -48,6 +48,7 @@ import {
   SubjectChapter,
   MCQQuestion,
   StudyNote,
+  StudyPdfMaterial,
   StudentProgressSnapshot,
 } from '../types';
 import { computeSubscriptionExpiry } from '../utils/membershipRules';
@@ -107,6 +108,7 @@ export async function registerWithEmail(params: {
     dailyGoalMinutes: 120,
     studyMinutesTotal: 0,
     studyStreak: 0,
+    canUploadNotes: false,
     createdAt: new Date().toISOString().split('T')[0],
   };
 
@@ -155,6 +157,7 @@ async function ensureAuthorizedUserProfile(fbUser: FirebaseUser): Promise<UserPr
       dailyGoalMinutes: 120,
       studyMinutesTotal: 0,
       studyStreak: 0,
+      canUploadNotes: isVerifiedOwner,
       lastActiveDate: todayIso,
       createdAt: todayIso,
     };
@@ -265,6 +268,7 @@ export async function updateUserProfileInDb(userId: string, updates: Partial<Use
       delete payload.passExpiry;
       delete payload.isSuspended;
       delete payload.suspensionReason;
+      delete payload.canUploadNotes;
     }
     await updateDoc(doc(db, 'users', userId), payload);
   } catch (error) {
@@ -1402,3 +1406,456 @@ export function subscribeToStudyMaterials(callback: (materials: StudyNote[]) => 
     }
   );
 }
+
+// ============================================================================
+// 9. PDF STUDY MATERIALS, STUDENT UPLOAD PERMISSIONS & APPROVAL WORKFLOW
+// ============================================================================
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        const commaIdx = reader.result.indexOf(',');
+        resolve(commaIdx >= 0 ? reader.result.slice(commaIdx + 1) : reader.result);
+      } else {
+        reject(new Error('Failed to read PDF file.'));
+      }
+    };
+    reader.onerror = () => reject(new Error('Error reading selected PDF file.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function uploadPdfAndCreateNoteMaterial(params: {
+  file: File;
+  metadata: {
+    title: string;
+    description: string;
+    paperId: StudyPdfMaterial['paperId'];
+    chapterId: string;
+    chapterNumber: number;
+    chapterTitle: string;
+    attempt: StudyPdfMaterial['attempt'];
+    category: StudyPdfMaterial['category'];
+  };
+  uploader: UserProfile;
+}): Promise<StudyPdfMaterial> {
+  const fbUser = auth.currentUser;
+  if (!fbUser) {
+    throw new Error('Please sign in first to upload PDF notes.');
+  }
+
+  const token = await fbUser.getIdToken();
+  const fileBase64 = await fileToBase64(params.file);
+
+  const uploadResp = await fetch('/api/materials/upload', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      fileName: params.file.name,
+      mimeType: params.file.type || 'application/pdf',
+      fileBase64,
+    }),
+  });
+
+  const uploadJson = (await uploadResp.json()) as {
+    ok?: boolean;
+    error?: string;
+    materialId: string;
+    storageFileName: string;
+    fileUrl: string;
+    fileName: string;
+    fileSizeBytes: number;
+    mimeType: 'application/pdf';
+    forcedStatus: 'pending' | 'approved';
+    uploaderRole: 'admin' | 'student';
+  };
+
+  if (!uploadResp.ok || !uploadJson.ok) {
+    throw new Error(uploadJson.error || 'PDF upload failed on server.');
+  }
+
+  const nowIso = new Date().toISOString();
+  const materialDoc: StudyPdfMaterial = {
+    id: uploadJson.materialId,
+    title: params.metadata.title.trim(),
+    description: params.metadata.description.trim(),
+    paperId: params.metadata.paperId,
+    chapterId: params.metadata.chapterId,
+    chapterNumber: Number(params.metadata.chapterNumber),
+    chapterTitle: params.metadata.chapterTitle.trim(),
+    attempt: params.metadata.attempt,
+    category: params.metadata.category,
+    fileName: uploadJson.fileName,
+    storageFileName: uploadJson.storageFileName,
+    fileUrl: uploadJson.fileUrl,
+    fileSizeBytes: uploadJson.fileSizeBytes,
+    mimeType: 'application/pdf',
+    uploaderId: fbUser.uid,
+    uploaderName: params.uploader.name || fbUser.displayName || 'CA Saathi User',
+    uploaderEmail: fbUser.email || params.uploader.email || '',
+    uploaderRole: uploadJson.uploaderRole,
+    status: uploadJson.forcedStatus,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+
+  try {
+    await setDoc(doc(db, 'noteMaterials', materialDoc.id), materialDoc);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `noteMaterials/${materialDoc.id}`);
+  }
+
+  if (uploadJson.uploaderRole === 'admin') {
+    await addAuditLogToDb({
+      action: 'Uploaded Study PDF',
+      details: `${materialDoc.title} (${materialDoc.paperId.toUpperCase()} · ${materialDoc.attempt} · ${materialDoc.category})`,
+      performedBy: fbUser.email || ADMIN_EMAIL,
+      targetId: materialDoc.id,
+      targetName: materialDoc.title,
+      type: 'notes',
+    }).catch(() => {});
+  } else {
+    const notifId = `notif_note_${Date.now()}`;
+    try {
+      await setDoc(doc(db, 'notifications', notifId), {
+        id: notifId,
+        recipientId: 'admin',
+        title: `New Student Notes Submitted (${materialDoc.category})`,
+        message: `${materialDoc.uploaderName} uploaded "${materialDoc.title}" (${materialDoc.attempt}) for review.`,
+        type: 'note_submitted',
+        read: false,
+        relatedId: materialDoc.id,
+        createdAt: nowIso,
+      });
+    } catch {
+      // Non-fatal if admin alert notification fails
+    }
+  }
+
+  return materialDoc;
+}
+
+export async function replaceNoteMaterialPdf(params: {
+  existing: StudyPdfMaterial;
+  newFile: File;
+}): Promise<{ storageFileName: string; fileName: string; fileSizeBytes: number; fileUrl: string }> {
+  if (!isVerifiedAdminAuth() || !auth.currentUser) {
+    throw new Error('Only verified Owner can replace note PDFs.');
+  }
+  const token = await auth.currentUser.getIdToken();
+  const fileBase64 = await fileToBase64(params.newFile);
+
+  const resp = await fetch(`/api/materials/${encodeURIComponent(params.existing.id)}/replace`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      fileName: params.newFile.name,
+      mimeType: params.newFile.type || 'application/pdf',
+      fileBase64,
+      oldStorageFileName: params.existing.storageFileName,
+    }),
+  });
+
+  const data = (await resp.json()) as {
+    ok?: boolean;
+    error?: string;
+    storageFileName: string;
+    fileUrl: string;
+    fileName: string;
+    fileSizeBytes: number;
+  };
+  if (!resp.ok || !data.ok) {
+    throw new Error(data.error || 'Failed to replace PDF file.');
+  }
+
+  await updateDoc(doc(db, 'noteMaterials', params.existing.id), {
+    storageFileName: data.storageFileName,
+    fileUrl: data.fileUrl,
+    fileName: data.fileName,
+    fileSizeBytes: data.fileSizeBytes,
+    updatedAt: new Date().toISOString(),
+  });
+
+  await addAuditLogToDb({
+    action: 'Replaced Study PDF File',
+    details: `${params.existing.title} -> ${data.fileName}`,
+    performedBy: auth.currentUser.email || ADMIN_EMAIL,
+    targetId: params.existing.id,
+    targetName: params.existing.title,
+    type: 'notes',
+  }).catch(() => {});
+
+  return {
+    storageFileName: data.storageFileName,
+    fileName: data.fileName,
+    fileSizeBytes: data.fileSizeBytes,
+    fileUrl: data.fileUrl,
+  };
+}
+
+export async function updateNoteMaterialMetaInDb(
+  materialId: string,
+  updates: Partial<StudyPdfMaterial>
+): Promise<void> {
+  if (!isVerifiedAdminAuth()) return;
+  const path = `noteMaterials/${materialId}`;
+  try {
+    await updateDoc(doc(db, 'noteMaterials', materialId), {
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    });
+    await addAuditLogToDb({
+      action: 'Updated Study Material Metadata',
+      details: `${updates.title || materialId}`,
+      performedBy: auth.currentUser?.email || ADMIN_EMAIL,
+      targetId: materialId,
+      targetName: updates.title || materialId,
+      type: 'notes',
+    }).catch(() => {});
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function approveNoteMaterialInDb(material: StudyPdfMaterial): Promise<void> {
+  if (!isVerifiedAdminAuth()) return;
+  const nowIso = new Date().toISOString();
+  const path = `noteMaterials/${material.id}`;
+  try {
+    await updateDoc(doc(db, 'noteMaterials', material.id), {
+      status: 'approved',
+      rejectionReason: '',
+      reviewedBy: auth.currentUser?.email || ADMIN_EMAIL,
+      reviewedAt: nowIso,
+      updatedAt: nowIso,
+    });
+
+    if (material.uploaderId && material.uploaderRole === 'student') {
+      const notifId = `notif_note_ok_${Date.now()}`;
+      await setDoc(doc(db, 'notifications', notifId), {
+        id: notifId,
+        recipientId: material.uploaderId,
+        title: 'Notes Approved & Published',
+        message: `Your uploaded notes "${material.title}" have been approved by Admin and are now live in CA Foundation Library.`,
+        type: 'note_approved',
+        read: false,
+        relatedId: material.id,
+        createdAt: nowIso,
+      }).catch(() => {});
+    }
+
+    await addAuditLogToDb({
+      action: 'Approved Student Notes',
+      details: `"${material.title}" uploaded by ${material.uploaderName}`,
+      performedBy: auth.currentUser?.email || ADMIN_EMAIL,
+      targetId: material.id,
+      targetName: material.title,
+      type: 'notes',
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function rejectNoteMaterialInDb(
+  material: StudyPdfMaterial,
+  reason: string
+): Promise<void> {
+  if (!isVerifiedAdminAuth()) return;
+  const nowIso = new Date().toISOString();
+  const cleanReason = reason.trim() || 'Does not meet ICAI CA Foundation study material guidelines.';
+  const path = `noteMaterials/${material.id}`;
+  try {
+    await updateDoc(doc(db, 'noteMaterials', material.id), {
+      status: 'rejected',
+      rejectionReason: cleanReason,
+      reviewedBy: auth.currentUser?.email || ADMIN_EMAIL,
+      reviewedAt: nowIso,
+      updatedAt: nowIso,
+    });
+
+    if (material.uploaderId && material.uploaderRole === 'student') {
+      const notifId = `notif_note_rej_${Date.now()}`;
+      await setDoc(doc(db, 'notifications', notifId), {
+        id: notifId,
+        recipientId: material.uploaderId,
+        title: 'Notes Submission Needs Revision',
+        message: `Your submission "${material.title}" was declined: ${cleanReason}`,
+        type: 'note_rejected',
+        read: false,
+        relatedId: material.id,
+        createdAt: nowIso,
+      }).catch(() => {});
+    }
+
+    await addAuditLogToDb({
+      action: 'Rejected Student Notes',
+      details: `"${material.title}" (${material.uploaderName}) · Reason: ${cleanReason}`,
+      performedBy: auth.currentUser?.email || ADMIN_EMAIL,
+      targetId: material.id,
+      targetName: material.title,
+      type: 'notes',
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteNoteMaterialInDb(material: StudyPdfMaterial): Promise<void> {
+  if (!isVerifiedAdminAuth() || !auth.currentUser) return;
+  const path = `noteMaterials/${material.id}`;
+  try {
+    const token = await auth.currentUser.getIdToken();
+    await fetch(
+      `/api/materials/${encodeURIComponent(material.id)}/file?storageFileName=${encodeURIComponent(
+        material.storageFileName || `${material.id}.pdf`
+      )}`,
+      {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    ).catch(() => {});
+
+    await deleteDoc(doc(db, 'noteMaterials', material.id));
+
+    await addAuditLogToDb({
+      action: 'Deleted Study Material PDF',
+      details: `${material.title} (${material.fileName})`,
+      performedBy: auth.currentUser.email || ADMIN_EMAIL,
+      targetId: material.id,
+      targetName: material.title,
+      type: 'notes',
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function toggleStudentUploadPermissionInDb(
+  student: UserProfile,
+  allowUpload: boolean
+): Promise<void> {
+  if (!isVerifiedAdminAuth()) return;
+  const nowIso = new Date().toISOString();
+  await updateStudentStatusByAdmin(
+    student.id,
+    { canUploadNotes: allowUpload },
+    {
+      action: allowUpload ? 'Granted Notes Upload Permission' : 'Revoked Notes Upload Permission',
+      details: `${student.name} (${student.email}) -> canUploadNotes: ${allowUpload}`,
+      targetName: student.name,
+    }
+  );
+
+  const notifId = `notif_perm_${Date.now()}`;
+  await setDoc(doc(db, 'notifications', notifId), {
+    id: notifId,
+    recipientId: student.id,
+    title: allowUpload ? 'Notes Upload Permission Granted' : 'Notes Upload Permission Revoked',
+    message: allowUpload
+      ? 'Admin has enabled PDF notes upload access for your account. Submissions go through admin review before publishing.'
+      : 'Admin has disabled PDF notes upload access on your account.',
+    type: 'upload_permission',
+    read: false,
+    relatedId: student.id,
+    createdAt: nowIso,
+  }).catch(() => {});
+}
+
+export function subscribeToAllNoteMaterialsForAdmin(
+  callback: (materials: StudyPdfMaterial[]) => void
+): Unsubscribe {
+  if (!isVerifiedAdminAuth()) return () => {};
+  const path = 'noteMaterials';
+  return onSnapshot(
+    collection(db, path),
+    (snapshot) => {
+      const list: StudyPdfMaterial[] = [];
+      snapshot.forEach((d) => list.push(d.data() as StudyPdfMaterial));
+      callback(list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    }
+  );
+}
+
+export function subscribeToApprovedNoteMaterials(
+  callback: (materials: StudyPdfMaterial[]) => void
+): Unsubscribe {
+  const path = 'noteMaterials';
+  const q = query(collection(db, path), where('status', '==', 'approved'));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list: StudyPdfMaterial[] = [];
+      snapshot.forEach((d) => list.push(d.data() as StudyPdfMaterial));
+      callback(list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    }
+  );
+}
+
+export function subscribeToMySubmittedNotes(
+  userId: string,
+  callback: (materials: StudyPdfMaterial[]) => void
+): Unsubscribe {
+  if (!userId || userId === 'guest') return () => {};
+  const path = 'noteMaterials';
+  const q = query(collection(db, path), where('uploaderId', '==', userId));
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list: StudyPdfMaterial[] = [];
+      snapshot.forEach((d) => list.push(d.data() as StudyPdfMaterial));
+      callback(list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')));
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    }
+  );
+}
+
+export async function fetchAuthorizedPdfBlobUrl(
+  material: StudyPdfMaterial,
+  asDownload = false
+): Promise<{ blobUrl: string; revoke: () => void }> {
+  const fbUser = auth.currentUser;
+  if (!fbUser) {
+    throw new Error('Authentication required to open PDF study materials.');
+  }
+  const token = await fbUser.getIdToken();
+  const url = `/api/materials/${encodeURIComponent(material.id)}/pdf${asDownload ? '?download=1' : ''}`;
+  const resp = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  if (!resp.ok) {
+    let errMsg = `Unable to load PDF (${resp.status})`;
+    try {
+      const errJson = (await resp.json()) as { error?: string };
+      if (errJson.error) errMsg = errJson.error;
+    } catch {
+      // ignore non-json error body
+    }
+    throw new Error(errMsg);
+  }
+
+  const blob = await resp.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  return {
+    blobUrl,
+    revoke: () => URL.revokeObjectURL(blobUrl),
+  };
+}
+

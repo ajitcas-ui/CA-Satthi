@@ -6,6 +6,9 @@ import {
   MCQQuestion,
   MockTest,
   StudyNote,
+  StudySession,
+  StudyTask,
+  TestAttemptResult,
 } from '../types';
 
 export const SUPPORTED_EXAM_ATTEMPTS: readonly ExamAttemptId[] = ['January 2027', 'May 2027'];
@@ -176,3 +179,73 @@ export function prioritizeQuestionsForAttempt(
     return 0;
   });
 }
+
+export function getAttemptProgressSlug(attempt: ExamAttemptId): 'jan2027' | 'may2027' {
+  return normalizeExamAttempt(attempt) === 'May 2027' ? 'may2027' : 'jan2027';
+}
+
+export function buildAttemptChapterKey(chapterId: string, attempt: ExamAttemptId): string {
+  const cleanId = chapterId.replace(/^(jan2027|may2027)__/, '');
+  return `${getAttemptProgressSlug(attempt)}__${cleanId}`;
+}
+
+export function resolveChapterStatusForAttempt(
+  progressMap: Record<string, 'pending' | 'revising' | 'mastered'>,
+  chapterId: string,
+  attempt: ExamAttemptId
+): 'pending' | 'revising' | 'mastered' {
+  const cleanId = chapterId.replace(/^(jan2027|may2027)__/, '');
+  const scopedKey = buildAttemptChapterKey(cleanId, attempt);
+  if (progressMap[scopedKey]) return progressMap[scopedKey];
+  // Legacy unscoped progress records preserve January 2027 history safely
+  if (normalizeExamAttempt(attempt) === 'January 2027' && progressMap[cleanId]) {
+    return progressMap[cleanId];
+  }
+  return 'pending';
+}
+
+export function buildAttemptChapterProgressMap(
+  progressMap: Record<string, 'pending' | 'revising' | 'mastered'>,
+  chapterIds: string[],
+  attempt: ExamAttemptId
+): Record<string, 'pending' | 'revising' | 'mastered'> {
+  const result: Record<string, 'pending' | 'revising' | 'mastered'> = {};
+  for (const chId of chapterIds) {
+    result[chId] = resolveChapterStatusForAttempt(progressMap, chId, attempt);
+  }
+  return result;
+}
+
+export function filterStudySessionsByAttempt(
+  sessions: StudySession[],
+  attempt: ExamAttemptId,
+  includeAllAttempts = false
+): StudySession[] {
+  if (includeAllAttempts) return sessions;
+  return sessions.filter((s) => {
+    if (!s.examAttempt) return normalizeExamAttempt(attempt) === 'January 2027';
+    return normalizeExamAttempt(s.examAttempt) === normalizeExamAttempt(attempt);
+  });
+}
+
+export function filterTestResultsByAttempt(
+  results: TestAttemptResult[],
+  attempt: ExamAttemptId,
+  includeAllAttempts = false
+): TestAttemptResult[] {
+  if (includeAllAttempts) return results;
+  return results.filter((r) => {
+    if (!r.examAttempt) return normalizeExamAttempt(attempt) === 'January 2027';
+    return normalizeExamAttempt(r.examAttempt) === normalizeExamAttempt(attempt);
+  });
+}
+
+export function filterStudyTasksByAttempt(
+  tasks: StudyTask[],
+  attempt: ExamAttemptId,
+  includeAllAttempts = false
+): StudyTask[] {
+  if (includeAllAttempts) return tasks;
+  return tasks.filter((t) => !t.examAttempt || normalizeExamAttempt(t.examAttempt) === normalizeExamAttempt(attempt));
+}
+

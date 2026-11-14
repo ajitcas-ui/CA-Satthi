@@ -8,7 +8,7 @@ import {
 import { computeMembershipState } from './membershipRules';
 import { formatIsoDateLocal } from './studyTracker';
 
-export type StudentFilterMode = 'all' | 'active' | 'pending' | 'unpaid' | 'expired' | 'suspended';
+export type StudentFilterMode = 'all' | 'active' | 'pending' | 'unpaid' | 'expired' | 'suspended' | 'uploaders';
 export type ReportTimeframe = 'daily' | 'weekly' | 'monthly';
 
 export interface OwnerOverviewMetrics {
@@ -21,6 +21,9 @@ export interface OwnerOverviewMetrics {
   unpaidStudents: number;
   expiredStudents: number;
   suspendedStudents: number;
+  uploadPermittedStudents: number;
+  jan2027Students: number;
+  may2027Students: number;
   totalVisitors: number;
   currentlyStudyingCount: number;
   liveStudyDurationMinutes: number;
@@ -92,12 +95,24 @@ export function computeOwnerOverviewMetrics(params: {
   let expiredStudents = 0;
   let suspendedStudents = 0;
   let activeStudents = 0;
+  let uploadPermittedStudents = 0;
+  let jan2027Students = 0;
+  let may2027Students = 0;
 
   const pendingStudentIdsWithClaim = new Set(
     params.payments.filter((p) => p.status === 'pending').map((p) => p.studentId)
   );
 
   for (const s of students) {
+    if (s.canUploadNotes === true && !s.isSuspended) {
+      uploadPermittedStudents += 1;
+    }
+    if ((s.targetAttempt || '').toLowerCase().includes('may') && (s.targetAttempt || '').includes('2027')) {
+      may2027Students += 1;
+    } else {
+      jan2027Students += 1;
+    }
+
     const state = computeMembershipState(s, params.payments, nowMs);
     if (s.isSuspended) {
       suspendedStudents += 1;
@@ -172,6 +187,9 @@ export function computeOwnerOverviewMetrics(params: {
     unpaidStudents,
     expiredStudents,
     suspendedStudents,
+    uploadPermittedStudents,
+    jan2027Students,
+    may2027Students,
     totalVisitors: uniqueVisitors.size,
     currentlyStudyingCount: studyingPresences.length,
     liveStudyDurationMinutes,
@@ -393,6 +411,7 @@ export function filterStudentsForOwner(params: {
     if (params.filter === 'pending' && state.status !== 'pending') return false;
     if (params.filter === 'expired' && (student.isSuspended || state.status !== 'expired')) return false;
     if (params.filter === 'unpaid' && (student.isSuspended || state.status !== 'unpaid')) return false;
+    if (params.filter === 'uploaders' && (student.isSuspended || student.canUploadNotes !== true)) return false;
 
     if (!q) return true;
     return (

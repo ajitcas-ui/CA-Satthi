@@ -8,6 +8,9 @@ import {
   ExamUpdate,
   Language,
   MCQQuestion,
+  MaterialApprovalStatus,
+  MaterialAttemptScope,
+  MaterialCategory,
   ModerationReport,
   OwnerDashboardSection,
   PaperId,
@@ -16,6 +19,7 @@ import {
   QuestionSourceType,
   StudentProgressSnapshot,
   StudyNote,
+  StudyPdfMaterial,
   StudyPresence,
   SubjectChapter,
   UpiConfig,
@@ -50,9 +54,11 @@ import {
 } from '../utils/storageDb';
 import {
   addAuditLogToDb,
+  approveNoteMaterialInDb,
   approvePaymentRequestInDb,
   deleteCustomQuestionFromDb,
   deleteExamAnnouncementFromDb,
+  deleteNoteMaterialInDb,
   deletePostFromDb,
   deleteReplyFromDb,
   deleteStudyMaterialFromDb,
@@ -61,7 +67,9 @@ import {
   logoutUser,
   markNotificationReadInDb,
   publishExamAnnouncementToDb,
+  rejectNoteMaterialInDb,
   rejectPaymentRequestInDb,
+  replaceNoteMaterialPdf,
   resolveModerationReportInDb,
   saveCustomQuestionToDb,
   saveExamConfigToDb,
@@ -69,6 +77,7 @@ import {
   saveSubjectChapterToDb,
   saveUpiConfigToDb,
   sendAdminNotificationToDb,
+  subscribeToAllNoteMaterialsForAdmin,
   subscribeToAllPaymentRequests,
   subscribeToAllStudents,
   subscribeToAnalyticsEvents,
@@ -82,8 +91,21 @@ import {
   subscribeToSubjectChapters,
   togglePinPostInDb,
   toggleResolveDoubtInDb,
+  toggleStudentUploadPermissionInDb,
+  updateNoteMaterialMetaInDb,
   updateStudentStatusByAdmin,
+  uploadPdfAndCreateNoteMaterial,
 } from '../firebase/services';
+import {
+  MATERIAL_ATTEMPT_SCOPES,
+  MATERIAL_CATEGORIES,
+  MAX_PDF_SIZE_BYTES,
+  computeMaterialOverviewCounts,
+  filterStudyMaterialsHierarchy,
+  formatFileSize,
+  validatePdfMetadata,
+} from '../utils/studyMaterials';
+import { PdfReaderModal } from './PdfReaderModal';
 import { playChimeSound } from '../utils/audio';
 import {
   ArrowLeft,
@@ -97,6 +119,8 @@ import {
   Download,
   Edit3,
   Eye,
+  FileText,
+  FileUp,
   Filter,
   IndianRupee,
   LayoutDashboard,
@@ -114,6 +138,7 @@ import {
   ShieldCheck,
   Sun,
   Trash2,
+  Upload,
   Users,
   X,
 } from 'lucide-react';
@@ -146,6 +171,7 @@ const SECTION_ITEMS: Array<{
   { id: 'students', label: 'Students', icon: Users },
   { id: 'live_activity', label: 'Live Activity', icon: Radio },
   { id: 'content', label: 'Content Management', icon: BookOpen },
+  { id: 'notes_management', label: 'Notes Management', icon: FileText },
   { id: 'groups', label: 'Group Management', icon: MessageSquare },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
@@ -189,6 +215,7 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
   const [cloudQuestions, setCloudQuestions] = useState<MCQQuestion[]>([]);
   const [cloudChapters, setCloudChapters] = useState<SubjectChapter[]>(propChapters);
   const [cloudMaterials, setCloudMaterials] = useState<StudyNote[]>([]);
+  const [pdfMaterials, setPdfMaterials] = useState<StudyPdfMaterial[]>([]);
   const [serverSessionStatus, setServerSessionStatus] = useState<'checking' | 'verified' | 'denied'>('checking');
 
   useEffect(() => {
@@ -232,6 +259,7 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
       }
     });
     const unsubMats = subscribeToStudyMaterials(setCloudMaterials);
+    const unsubPdfMats = subscribeToAllNoteMaterialsForAdmin(setPdfMaterials);
 
     return () => {
       cancelled = true;
@@ -246,6 +274,7 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
       unsubQs();
       unsubChaps();
       unsubMats();
+      unsubPdfMats();
     };
   }, [isAuthorizedOwner, setPropChapters]);
 
@@ -275,6 +304,189 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
     () => notificationsList.filter((n) => n.recipientId === 'admin' && n.type === 'payment_submitted' && !n.read),
     [notificationsList]
   );
+
+  const materialOverviewCounts = useMemo(
+    () => computeMaterialOverviewCounts(pdfMaterials),
+    [pdfMaterials]
+  );
+
+  // ============================================================================
+  // NOTES MANAGEMENT (ADMIN PDF UPLOAD / EDIT / REPLACE / APPROVAL WORKFLOW)
+  // ============================================================================
+  const canonicalAndCloudChapters = useMemo(
+    () => (cloudChapters.length >= 46 ? cloudChapters : CANONICAL_SYLLABUS),
+    [cloudChapters]
+  );
+  const [nmEditingTarget, setNmEditingTarget] = useState<StudyPdfMaterial | null>(null);
+  const [nmTitle, setNmTitle] = useState('');
+  const [nmPaperId, setNmPaperId] = useState<PaperId>('paper1');
+  const nmPaperChapters = useMemo(
+    () =>
+      canonicalAndCloudChapters
+        .filter((c) => c.paperId === nmPaperId)
+        .sort((a, b) => a.chapterNumber - b.chapterNumber),
+    [canonicalAndCloudChapters, nmPaperId]
+  );
+  const [nmChapterId, setNmChapterId] = useState('ch_p1_01');
+  const [nmAttempt, setNmAttempt] = useState<MaterialAttemptScope>('January 2027');
+  const [nmCategory, setNmCategory] = useState<MaterialCategory>('Chapter-wise Notes');
+  const [nmDescription, setNmDescription] = useState('');
+  const [nmFile, setNmFile] = useState<File | null>(null);
+  const [nmSubmitting, setNmSubmitting] = useState(false);
+
+  const [nmStatusFilter, setNmStatusFilter] = useState<'all' | MaterialApprovalStatus>('pending');
+  const [nmPaperFilter, setNmPaperFilter] = useState<'all' | PaperId>('all');
+  const [nmAttemptFilter, setNmAttemptFilter] = useState<'all' | MaterialAttemptScope>('all');
+  const [nmCategoryFilter, setNmCategoryFilter] = useState<'all' | MaterialCategory>('all');
+  const [nmRoleFilter, setNmRoleFilter] = useState<'all' | 'admin' | 'student'>('all');
+  const [nmSearch, setNmSearch] = useState('');
+  const [previewPdfMaterial, setPreviewPdfMaterial] = useState<StudyPdfMaterial | null>(null);
+  const [rejectNoteTarget, setRejectNoteTarget] = useState<StudyPdfMaterial | null>(null);
+  const [rejectNoteReason, setRejectNoteReason] = useState('');
+  const [busyNoteId, setBusyNoteId] = useState<string | null>(null);
+
+  const filteredAdminNotes = useMemo(
+    () =>
+      filterStudyMaterialsHierarchy(pdfMaterials, {
+        status: nmStatusFilter,
+        paperId: nmPaperFilter,
+        attempt: nmAttemptFilter,
+        category: nmCategoryFilter,
+        uploaderRole: nmRoleFilter,
+        search: nmSearch,
+      }),
+    [pdfMaterials, nmStatusFilter, nmPaperFilter, nmAttemptFilter, nmCategoryFilter, nmRoleFilter, nmSearch]
+  );
+
+  const resetNotesForm = () => {
+    setNmEditingTarget(null);
+    setNmTitle('');
+    setNmPaperId('paper1');
+    setNmChapterId('ch_p1_01');
+    setNmAttempt('January 2027');
+    setNmCategory('Chapter-wise Notes');
+    setNmDescription('');
+    setNmFile(null);
+  };
+
+  const handleSaveAdminPdfNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const chObj = nmPaperChapters.find((c) => c.id === nmChapterId) || nmPaperChapters[0];
+    if (!chObj) {
+      showToast('Please select a syllabus chapter.', 'error');
+      return;
+    }
+
+    const metaValidation = validatePdfMetadata({
+      title: nmTitle,
+      description: nmDescription,
+      paperId: nmPaperId,
+      chapterId: chObj.id,
+      chapterNumber: chObj.chapterNumber,
+      chapterTitle: chObj.title.en,
+      attempt: nmAttempt,
+      category: nmCategory,
+    });
+
+    if (!metaValidation.ok) {
+      showToast(metaValidation.error, 'error');
+      return;
+    }
+
+    if (!nmEditingTarget && !nmFile) {
+      showToast('Please select a .PDF file to upload.', 'error');
+      return;
+    }
+
+    if (nmFile && (nmFile.size <= 0 || nmFile.size > MAX_PDF_SIZE_BYTES || !nmFile.name.toLowerCase().endsWith('.pdf'))) {
+      showToast('Only .PDF files up to 15 MB are permitted.', 'error');
+      return;
+    }
+
+    setNmSubmitting(true);
+    try {
+      if (nmEditingTarget) {
+        if (nmFile) {
+          await replaceNoteMaterialPdf({ existing: nmEditingTarget, newFile: nmFile });
+        }
+        await updateNoteMaterialMetaInDb(nmEditingTarget.id, {
+          title: metaValidation.clean.title,
+          description: metaValidation.clean.description,
+          paperId: metaValidation.clean.paperId as PaperId,
+          chapterId: metaValidation.clean.chapterId,
+          chapterNumber: metaValidation.clean.chapterNumber,
+          chapterTitle: metaValidation.clean.chapterTitle,
+          attempt: metaValidation.clean.attempt as MaterialAttemptScope,
+          category: metaValidation.clean.category as MaterialCategory,
+        });
+        showToast(nmFile ? 'Updated study material metadata and replaced PDF file.' : 'Updated study material details.');
+      } else if (nmFile) {
+        await uploadPdfAndCreateNoteMaterial({
+          file: nmFile,
+          metadata: {
+            title: metaValidation.clean.title,
+            description: metaValidation.clean.description,
+            paperId: metaValidation.clean.paperId as PaperId,
+            chapterId: metaValidation.clean.chapterId,
+            chapterNumber: metaValidation.clean.chapterNumber,
+            chapterTitle: metaValidation.clean.chapterTitle,
+            attempt: metaValidation.clean.attempt as MaterialAttemptScope,
+            category: metaValidation.clean.category as MaterialCategory,
+          },
+          uploader: currentUser,
+        });
+        showToast('PDF study material uploaded and published to students.');
+      }
+      resetNotesForm();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to save PDF note.', 'error');
+    } finally {
+      setNmSubmitting(false);
+    }
+  };
+
+  const handleApproveNote = async (mat: StudyPdfMaterial) => {
+    setBusyNoteId(mat.id);
+    try {
+      await approveNoteMaterialInDb(mat);
+      playChimeSound('success');
+      showToast(`Approved "${mat.title}" — now visible in Student Study Material Library.`);
+    } catch {
+      showToast('Failed to approve note submission.', 'error');
+    } finally {
+      setBusyNoteId(null);
+    }
+  };
+
+  const handleConfirmRejectNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectNoteTarget) return;
+    setBusyNoteId(rejectNoteTarget.id);
+    try {
+      await rejectNoteMaterialInDb(rejectNoteTarget, rejectNoteReason);
+      playChimeSound('warning');
+      showToast(`Rejected "${rejectNoteTarget.title}" and notified ${rejectNoteTarget.uploaderName}.`, 'info');
+      setRejectNoteTarget(null);
+      setRejectNoteReason('');
+    } catch {
+      showToast('Failed to reject note submission.', 'error');
+    } finally {
+      setBusyNoteId(null);
+    }
+  };
+
+  const handleDeleteNoteMaterial = async (mat: StudyPdfMaterial) => {
+    setBusyNoteId(mat.id);
+    try {
+      await deleteNoteMaterialInDb(mat);
+      if (nmEditingTarget?.id === mat.id) resetNotesForm();
+      showToast(`Deleted "${mat.title}".`, 'info');
+    } catch {
+      showToast('Failed to delete study material.', 'error');
+    } finally {
+      setBusyNoteId(null);
+    }
+  };
 
   // ============================================================================
   // PAYMENTS STATE & ACTIONS
@@ -521,6 +733,20 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
     showToast(
       nextSuspended ? `Suspended ${student.name}` : `Reactivated ${student.name}`,
       nextSuspended ? 'info' : 'success'
+    );
+  };
+
+  const handleToggleStudentUploadPermission = async (student: UserProfile) => {
+    const nextAllow = student.canUploadNotes !== true;
+    await toggleStudentUploadPermissionInDb(student, nextAllow);
+    if (selectedStudent?.id === student.id) {
+      setSelectedStudent((prev) => (prev ? { ...prev, canUploadNotes: nextAllow } : null));
+    }
+    showToast(
+      nextAllow
+        ? `Granted PDF notes upload permission to ${student.name}`
+        : `Revoked PDF notes upload permission for ${student.name}`,
+      nextAllow ? 'success' : 'info'
     );
   };
 
@@ -915,11 +1141,13 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
           const badge =
             item.id === 'payments' && overviewMetrics.pendingPaymentRequestsCount > 0
               ? overviewMetrics.pendingPaymentRequestsCount
-              : item.id === 'groups' && pendingReportsCount > 0
-                ? pendingReportsCount
-                : item.id === 'notifications' && unreadPaymentAlerts.length > 0
-                  ? unreadPaymentAlerts.length
-                  : 0;
+              : item.id === 'notes_management' && materialOverviewCounts.pendingNotesCount > 0
+                ? materialOverviewCounts.pendingNotesCount
+                : item.id === 'groups' && pendingReportsCount > 0
+                  ? pendingReportsCount
+                  : item.id === 'notifications' && unreadPaymentAlerts.length > 0
+                    ? unreadPaymentAlerts.length
+                    : 0;
 
           return (
             <button
@@ -1126,15 +1354,24 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
                   <div>
                     <span className="text-xs text-slate-500 dark:text-slate-400 block">Pending Verifications</span>
                     <span className="text-xl font-bold text-amber-600 dark:text-amber-400 tabular-nums mt-0.5 block">
-                      {overviewMetrics.pendingPaymentRequestsCount}
+                      {overviewMetrics.pendingPaymentRequestsCount + materialOverviewCounts.pendingNotesCount}
                     </span>
-                    <button
-                      type="button"
-                      onClick={() => setActiveSection('payments')}
-                      className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer mt-0.5"
-                    >
-                      Open Approval Queue &rarr;
-                    </button>
+                    <div className="flex items-center gap-3 mt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setActiveSection('payments')}
+                        className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                      >
+                        {overviewMetrics.pendingPaymentRequestsCount} Payments &rarr;
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveSection('notes_management')}
+                        className="text-[11px] font-semibold text-violet-600 dark:text-violet-400 hover:underline cursor-pointer"
+                      >
+                        {materialOverviewCounts.pendingNotesCount} Notes &rarr;
+                      </button>
+                    </div>
                   </div>
                   <Clock className="w-6 h-6 text-amber-500 shrink-0" />
                 </div>
@@ -1150,6 +1387,69 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
                     </span>
                   </div>
                   <Radio className="w-6 h-6 text-blue-600 dark:text-blue-400 shrink-0" />
+                </div>
+              </div>
+
+              {/* Exam Attempt & Notes Library Overview Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+                    January 2027 Students
+                  </span>
+                  <span className="text-xl font-extrabold text-[#172554] dark:text-violet-300 tabular-nums mt-1 block">
+                    {overviewMetrics.jan2027Students}
+                  </span>
+                </div>
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+                    May 2027 Students
+                  </span>
+                  <span className="text-xl font-extrabold text-violet-700 dark:text-violet-400 tabular-nums mt-1 block">
+                    {overviewMetrics.may2027Students}
+                  </span>
+                </div>
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+                      Total Uploaded Notes (PDF)
+                    </span>
+                    <span className="text-xl font-extrabold text-slate-900 dark:text-white tabular-nums mt-1 block">
+                      {materialOverviewCounts.totalUploadedNotes}
+                    </span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                      {materialOverviewCounts.approvedNotesCount} live · {materialOverviewCounts.pendingNotesCount} pending
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setActiveSection('notes_management')}
+                    className="px-2.5 py-1 rounded-lg bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 text-[11px] font-bold cursor-pointer"
+                  >
+                    Manage
+                  </button>
+                </div>
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 block">
+                      Upload Permission Granted
+                    </span>
+                    <span className="text-xl font-extrabold text-indigo-700 dark:text-indigo-400 tabular-nums mt-1 block">
+                      {overviewMetrics.uploadPermittedStudents}
+                    </span>
+                    <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                      Students enabled
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveSection('students');
+                      setStudentFilter('uploaders');
+                    }}
+                    className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-[11px] font-semibold cursor-pointer"
+                  >
+                    View
+                  </button>
                 </div>
               </div>
 
@@ -1588,6 +1888,7 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
                       { id: 'unpaid', label: `Unpaid (${overviewMetrics.unpaidStudents})` },
                       { id: 'expired', label: `Expired (${overviewMetrics.expiredStudents})` },
                       { id: 'suspended', label: `Suspended (${overviewMetrics.suspendedStudents})` },
+                      { id: 'uploaders', label: `Upload Permitted (${overviewMetrics.uploadPermittedStudents})` },
                     ] as Array<{ id: StudentFilterMode; label: string }>
                   ).map((f) => (
                     <button
@@ -1645,6 +1946,7 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
                         <th className="py-3 px-4 font-semibold">Contact & Attempt</th>
                         <th className="py-3 px-4 font-semibold">Study Progress</th>
                         <th className="py-3 px-4 font-semibold">Membership</th>
+                        <th className="py-3 px-4 font-semibold">Notes Upload</th>
                         <th className="py-3 px-4 font-semibold text-right">Access Controls</th>
                       </tr>
                     </thead>
@@ -1695,6 +1997,20 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
                                   {state.status} {state.daysLeft > 0 ? `(${state.daysLeft}d)` : ''}
                                 </span>
                               )}
+                            </td>
+                            <td className="py-3 px-4">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleStudentUploadPermission(s)}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                                  s.canUploadNotes === true
+                                    ? 'bg-violet-600 text-white border-violet-600'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                                }`}
+                                title="Toggle student permission to upload PDF notes for review"
+                              >
+                                {s.canUploadNotes === true ? 'Allowed (ON)' : 'Disabled (OFF)'}
+                              </button>
                             </td>
                             <td className="py-3 px-4 text-right">
                               <div className="inline-flex items-center gap-1.5">
@@ -2410,6 +2726,420 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
           )}
 
           {/* ================================================================
+              5B. NOTES MANAGEMENT SECTION (PDF LIBRARY, UPLOADS & APPROVALS)
+             ================================================================ */}
+          {activeSection === 'notes_management' && (
+            <div className="space-y-5">
+              {/* Top Stats Strip */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Pending Student Reviews</span>
+                  <span className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums block mt-1">
+                    {materialOverviewCounts.pendingNotesCount}
+                  </span>
+                </div>
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Approved & Live PDFs</span>
+                  <span className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums block mt-1">
+                    {materialOverviewCounts.approvedNotesCount}
+                  </span>
+                </div>
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Rejected Submissions</span>
+                  <span className="text-2xl font-bold text-rose-600 dark:text-rose-400 tabular-nums block mt-1">
+                    {materialOverviewCounts.rejectedNotesCount}
+                  </span>
+                </div>
+                <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800">
+                  <span className="text-xs text-slate-500 dark:text-slate-400">Total Uploaded PDFs</span>
+                  <span className="text-2xl font-bold text-[#172554] dark:text-violet-300 tabular-nums block mt-1">
+                    {materialOverviewCounts.totalUploadedNotes}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 items-start">
+                {/* Admin Upload / Edit / Replace PDF Form */}
+                <form
+                  onSubmit={handleSaveAdminPdfNote}
+                  className="xl:col-span-5 bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 space-y-3.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-extrabold text-[#0F1E46] dark:text-white flex items-center gap-2">
+                      <FileUp className="w-4 h-4 text-violet-700 dark:text-violet-400" />
+                      <span>
+                        {nmEditingTarget ? 'Edit / Replace PDF Material' : 'Upload New Study PDF (Admin)'}
+                      </span>
+                    </h2>
+                    {nmEditingTarget && (
+                      <button
+                        type="button"
+                        onClick={resetNotesForm}
+                        className="text-xs font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+                      >
+                        Cancel Edit
+                      </button>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Title *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={nmTitle}
+                      onChange={(e) => setNmTitle(e.target.value)}
+                      placeholder="e.g. Ch 1 Theoretical Framework Complete PDF Notes"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Subject *
+                      </label>
+                      <select
+                        value={nmPaperId}
+                        onChange={(e) => {
+                          const p = e.target.value as PaperId;
+                          setNmPaperId(p);
+                          const firstCh = canonicalAndCloudChapters
+                            .filter((c) => c.paperId === p)
+                            .sort((a, b) => a.chapterNumber - b.chapterNumber)[0];
+                          if (firstCh) setNmChapterId(firstCh.id);
+                        }}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                      >
+                        {PAPERS.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.code}: {p.name.en}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Chapter *
+                      </label>
+                      <select
+                        value={nmChapterId}
+                        onChange={(e) => setNmChapterId(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                      >
+                        {nmPaperChapters.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            Ch {c.chapterNumber}: {c.title.en}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Exam Attempt *
+                      </label>
+                      <select
+                        value={nmAttempt}
+                        onChange={(e) => setNmAttempt(e.target.value as MaterialAttemptScope)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                      >
+                        {MATERIAL_ATTEMPT_SCOPES.map((att) => (
+                          <option key={att} value={att}>
+                            {att === 'Both' ? 'Both (Jan 2027 & May 2027)' : att}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                        Material Category *
+                      </label>
+                      <select
+                        value={nmCategory}
+                        onChange={(e) => setNmCategory(e.target.value as MaterialCategory)}
+                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                      >
+                        {MATERIAL_CATEGORIES.map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      Description
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={nmDescription}
+                      onChange={(e) => setNmDescription(e.target.value)}
+                      placeholder="Short note summary, ICAI module coverage, or exam pointers..."
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                      {nmEditingTarget ? 'Replace PDF File (Optional)' : 'PDF File (Max 15 MB) *'}
+                    </label>
+                    <label className="flex flex-col items-center justify-center p-4 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-violet-500 bg-slate-50 dark:bg-slate-800/40 cursor-pointer text-center">
+                      <Upload className="w-4 h-4 text-violet-600 mb-1" />
+                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                        {nmFile
+                          ? `${nmFile.name} (${formatFileSize(nmFile.size)})`
+                          : nmEditingTarget
+                            ? `Keep current (${nmEditingTarget.fileName}) or click to replace`
+                            : 'Click to pick .pdf file'}
+                      </span>
+                      <input
+                        type="file"
+                        accept=".pdf,application/pdf"
+                        onChange={(e) => setNmFile(e.target.files?.[0] || null)}
+                        className="sr-only"
+                      />
+                    </label>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={nmSubmitting}
+                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#172554] to-violet-700 hover:from-[#0F1E46] hover:to-violet-800 text-white text-xs font-bold cursor-pointer disabled:opacity-60"
+                  >
+                    {nmSubmitting
+                      ? 'Saving PDF Material...'
+                      : nmEditingTarget
+                        ? 'Save Changes'
+                        : 'Upload & Publish PDF'}
+                  </button>
+                </form>
+
+                {/* Approval Queue & All Uploaded Notes Table */}
+                <div className="xl:col-span-7 space-y-3">
+                  {/* Status Tabs & Filters */}
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {(
+                        [
+                          { id: 'pending', label: `Pending Review (${materialOverviewCounts.pendingNotesCount})` },
+                          { id: 'approved', label: `Approved (${materialOverviewCounts.approvedNotesCount})` },
+                          { id: 'rejected', label: `Rejected (${materialOverviewCounts.rejectedNotesCount})` },
+                          { id: 'all', label: `All PDFs (${materialOverviewCounts.totalUploadedNotes})` },
+                        ] as const
+                      ).map((tab) => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setNmStatusFilter(tab.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
+                            nmStatusFilter === tab.id
+                              ? 'bg-violet-700 text-white'
+                              : 'border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                      <div className="relative sm:col-span-2">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={nmSearch}
+                          onChange={(e) => setNmSearch(e.target.value)}
+                          placeholder="Search title, chapter, or student uploader..."
+                          className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                        />
+                      </div>
+                      <select
+                        value={nmPaperFilter}
+                        onChange={(e) => setNmPaperFilter(e.target.value as 'all' | PaperId)}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                      >
+                        <option value="all">All Subjects</option>
+                        {PAPERS.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.code}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={nmAttemptFilter}
+                        onChange={(e) => setNmAttemptFilter(e.target.value as 'all' | MaterialAttemptScope)}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                      >
+                        <option value="all">All Attempts</option>
+                        {MATERIAL_ATTEMPT_SCOPES.map((att) => (
+                          <option key={att} value={att}>
+                            {att}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <select
+                        value={nmCategoryFilter}
+                        onChange={(e) => setNmCategoryFilter(e.target.value as 'all' | MaterialCategory)}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                      >
+                        <option value="all">All Categories</option>
+                        {MATERIAL_CATEGORIES.map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
+                      </select>
+                      <select
+                        value={nmRoleFilter}
+                        onChange={(e) => setNmRoleFilter(e.target.value as 'all' | 'admin' | 'student')}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+                      >
+                        <option value="all">All Uploaders (Admin + Students)</option>
+                        <option value="student">Student Uploads Only</option>
+                        <option value="admin">Admin Uploads Only</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Notes Submissions & Library Cards */}
+                  <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-200 dark:divide-slate-800">
+                    {filteredAdminNotes.length === 0 ? (
+                      <p className="text-xs text-slate-500 dark:text-slate-400 p-8 text-center">
+                        No PDF study materials match the current filter.
+                      </p>
+                    ) : (
+                      filteredAdminNotes.map((mat) => (
+                        <div key={mat.id} className="p-4 space-y-2.5 text-xs">
+                          <div className="flex flex-wrap items-start justify-between gap-2">
+                            <div className="space-y-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                                    mat.status === 'approved'
+                                      ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                                      : mat.status === 'rejected'
+                                        ? 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+                                        : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                                  }`}
+                                >
+                                  {mat.status}
+                                </span>
+                                <span className="px-2 py-0.5 rounded bg-[#172554] text-white text-[10px] font-bold">
+                                  {mat.paperId.toUpperCase()} · Ch {mat.chapterNumber}
+                                </span>
+                                <span className="px-2 py-0.5 rounded bg-violet-100 dark:bg-violet-950 text-violet-800 dark:text-violet-300 text-[10px] font-bold">
+                                  {mat.category}
+                                </span>
+                                <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-semibold">
+                                  {mat.attempt}
+                                </span>
+                              </div>
+                              <p className="font-extrabold text-sm text-slate-900 dark:text-white">
+                                {mat.title}
+                              </p>
+                              <p className="text-[11px] text-slate-600 dark:text-slate-300">
+                                {mat.chapterTitle} {mat.description ? `· ${mat.description}` : ''}
+                              </p>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                                Uploaded by <strong>{mat.uploaderName}</strong> ({mat.uploaderRole})
+                                {mat.uploaderEmail ? ` · ${mat.uploaderEmail}` : ''} ·{' '}
+                                {new Date(mat.createdAt).toLocaleString()} · {formatFileSize(mat.fileSizeBytes)}
+                              </p>
+                              {mat.status === 'rejected' && mat.rejectionReason && (
+                                <p className="text-[11px] text-rose-600 dark:text-rose-300 italic">
+                                  Rejection Reason: {mat.rejectionReason}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewPdfMaterial(mat)}
+                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-violet-600" />
+                              <span>Preview PDF</span>
+                            </button>
+
+                            {mat.status !== 'approved' && (
+                              <button
+                                type="button"
+                                disabled={busyNoteId === mat.id}
+                                onClick={() => handleApproveNote(mat)}
+                                className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Approve</span>
+                              </button>
+                            )}
+
+                            {mat.status !== 'rejected' && (
+                              <button
+                                type="button"
+                                disabled={busyNoteId === mat.id}
+                                onClick={() => {
+                                  setRejectNoteTarget(mat);
+                                  setRejectNoteReason('Please ensure legible formatting and accurate ICAI syllabus alignment.');
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                                <span>Reject</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNmEditingTarget(mat);
+                                setNmTitle(mat.title);
+                                setNmPaperId(mat.paperId);
+                                setNmChapterId(mat.chapterId);
+                                setNmAttempt(mat.attempt);
+                                setNmCategory(mat.category);
+                                setNmDescription(mat.description || '');
+                                setNmFile(null);
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold flex items-center gap-1 cursor-pointer"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>Edit / Replace</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={busyNoteId === mat.id}
+                              onClick={() => handleDeleteNoteMaterial(mat)}
+                              className="px-2.5 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-semibold flex items-center gap-1 cursor-pointer ml-auto"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Delete</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================================================================
               6. GROUP MANAGEMENT SECTION
              ================================================================ */}
           {activeSection === 'groups' && (
@@ -3012,6 +3742,19 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => handleToggleStudentUploadPermission(selectedStudent)}
+                  className={`px-3 py-1.5 rounded-lg font-semibold cursor-pointer ${
+                    selectedStudent.canUploadNotes === true
+                      ? 'bg-violet-600 hover:bg-violet-700 text-white'
+                      : 'border border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/40'
+                  }`}
+                >
+                  {selectedStudent.canUploadNotes === true
+                    ? 'Notes Upload: ON (Click to Revoke)'
+                    : 'Grant Notes Upload Permission'}
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleToggleSuspendStudent(selectedStudent)}
                   className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-semibold cursor-pointer"
                 >
@@ -3174,6 +3917,56 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
           </form>
         </div>
       )}
+
+      {/* ====================================================================
+          REJECT STUDENT NOTES REASON MODAL
+         ==================================================================== */}
+      {rejectNoteTarget && (
+        <div className="fixed inset-0 z-50 bg-slate-950/75 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleConfirmRejectNote}
+            className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-5 space-y-4 border border-slate-200 dark:border-slate-800"
+          >
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              Reject Study Material · {rejectNoteTarget.title}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Submitted by {rejectNoteTarget.uploaderName} ({rejectNoteTarget.category})
+            </p>
+            <textarea
+              rows={3}
+              value={rejectNoteReason}
+              onChange={(e) => setRejectNoteReason(e.target.value)}
+              placeholder="Feedback shown to the student uploader..."
+              className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs"
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRejectNoteTarget(null)}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold cursor-pointer"
+              >
+                Confirm Reject
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ====================================================================
+          IN-APP PDF PREVIEW MODAL FOR ADMIN
+         ==================================================================== */}
+      <PdfReaderModal
+        material={previewPdfMaterial}
+        language="en"
+        onClose={() => setPreviewPdfMaterial(null)}
+      />
     </div>
   );
 };

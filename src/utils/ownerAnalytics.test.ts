@@ -157,6 +157,9 @@ describe('ownerAnalytics pure computations', () => {
     assert.equal(metrics.paidStudents, 1);
     assert.equal(metrics.pendingStudents, 1);
     assert.equal(metrics.suspendedStudents, 1);
+    assert.equal(metrics.jan2027Students, 3);
+    assert.equal(metrics.may2027Students, 0);
+    assert.equal(metrics.uploadPermittedStudents, 0);
     assert.equal(metrics.onlineStudents, 1);
     assert.equal(metrics.activeStudents, 2); // paid + Aman active yesterday
     assert.equal(metrics.currentlyStudyingCount, 1);
@@ -165,6 +168,37 @@ describe('ownerAnalytics pure computations', () => {
     assert.equal(metrics.totalRevenueInr, 5);
     assert.equal(metrics.totalApprovedPaymentsCount, 1);
     assert.equal(metrics.pendingPaymentRequestsCount, 1);
+  });
+
+  it('tracks May 2027 students and upload permissions accurately', () => {
+    const customUsers: UserProfile[] = [
+      ...SAMPLE_USERS,
+      {
+        ...SAMPLE_USERS[1],
+        id: 'stu_may_uploader',
+        targetAttempt: 'May 2027',
+        canUploadNotes: true,
+      },
+    ];
+    const metrics = computeOwnerOverviewMetrics({
+      users: customUsers,
+      payments: SAMPLE_PAYMENTS,
+      presences: SAMPLE_PRESENCES,
+      analyticsEvents: SAMPLE_EVENTS,
+      nowMs: NOW_MS,
+    });
+    assert.equal(metrics.jan2027Students, 3);
+    assert.equal(metrics.may2027Students, 1);
+    assert.equal(metrics.uploadPermittedStudents, 1);
+
+    const uploaders = filterStudentsForOwner({
+      students: customUsers,
+      payments: SAMPLE_PAYMENTS,
+      query: '',
+      filter: 'uploaders',
+      nowMs: NOW_MS,
+    });
+    assert.deepEqual(uploaders.map((u) => u.id), ['stu_may_uploader']);
   });
 
   it('computes engagement stats (DAU/WAU/MAU, study hours, accuracy)', () => {

@@ -9,8 +9,13 @@ import {
   filterNotesForAttempt,
   filterUpdatesForAttempt,
   prioritizeQuestionsForAttempt,
+  buildAttemptChapterKey,
+  resolveChapterStatusForAttempt,
+  buildAttemptChapterProgressMap,
+  filterStudySessionsByAttempt,
+  filterTestResultsByAttempt,
 } from './examAttempt.ts';
-import type { ExamCountdownConfig, ExamUpdate, MCQQuestion, MockTest, StudyNote } from '../types/index.ts';
+import type { ExamCountdownConfig, ExamUpdate, MCQQuestion, MockTest, StudyNote, StudySession, TestAttemptResult } from '../types/index.ts';
 
 test('supported exam attempts include both January 2027 and May 2027', () => {
   assert.deepEqual(SUPPORTED_EXAM_ATTEMPTS, ['January 2027', 'May 2027']);
@@ -113,4 +118,33 @@ test('prioritizeQuestionsForAttempt orders PYQs first for Jan 2027 and ICAI Modu
 
   const mayOrder = prioritizeQuestionsForAttempt(qs, 'May 2027').map((q) => q.id);
   assert.deepEqual(mayOrder, ['q_mod', 'q_pyq_new', 'q_pyq_old']);
+});
+
+test('attempt-scoped chapter progress separates Jan 2027 and May 2027 while preserving legacy progress', () => {
+  const rawProgress: Record<string, 'pending' | 'revising' | 'mastered'> = {
+    ch_p1_01: 'mastered', // legacy unscoped record
+    [buildAttemptChapterKey('ch_p1_02', 'May 2027')]: 'revising',
+  };
+
+  assert.equal(resolveChapterStatusForAttempt(rawProgress, 'ch_p1_01', 'January 2027'), 'mastered');
+  assert.equal(resolveChapterStatusForAttempt(rawProgress, 'ch_p1_01', 'May 2027'), 'pending');
+  assert.equal(resolveChapterStatusForAttempt(rawProgress, 'ch_p1_02', 'May 2027'), 'revising');
+
+  const mayMap = buildAttemptChapterProgressMap(rawProgress, ['ch_p1_01', 'ch_p1_02'], 'May 2027');
+  assert.deepEqual(mayMap, { ch_p1_01: 'pending', ch_p1_02: 'revising' });
+});
+
+test('filterStudySessionsByAttempt and filterTestResultsByAttempt isolate attempt records cleanly', () => {
+  const sessions = [
+    { id: 's_legacy', durationMinutes: 20 },
+    { id: 's_may', durationMinutes: 30, examAttempt: 'May 2027' },
+  ] as unknown as StudySession[];
+  assert.deepEqual(filterStudySessionsByAttempt(sessions, 'January 2027').map((s) => s.id), ['s_legacy']);
+  assert.deepEqual(filterStudySessionsByAttempt(sessions, 'May 2027').map((s) => s.id), ['s_may']);
+
+  const tests = [
+    { testId: 't_jan', examAttempt: 'January 2027' },
+    { testId: 't_may', examAttempt: 'May 2027' },
+  ] as unknown as TestAttemptResult[];
+  assert.deepEqual(filterTestResultsByAttempt(tests, 'May 2027').map((t) => t.testId), ['t_may']);
 });

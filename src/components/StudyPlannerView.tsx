@@ -194,6 +194,7 @@ export const StudyPlannerView: React.FC<StudyPlannerViewProps> = ({
       completed: false,
       date: new Date().toISOString().split('T')[0],
       priority: newPriority,
+      examAttempt: selectedAttempt,
     };
     setTasks((prev) => [newTask, ...prev]);
     if (currentUser?.id && currentUser.id !== 'guest') {

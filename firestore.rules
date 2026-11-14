@@ -49,10 +49,11 @@ service cloud.firestore {
           incoming().role == 'student' &&
           (!('hasPaidPass' in incoming()) || incoming().hasPaidPass == false) &&
           (!('membershipStatus' in incoming()) || incoming().membershipStatus == 'unpaid') &&
-          (!('isSuspended' in incoming()) || incoming().isSuspended == false)
+          (!('isSuspended' in incoming()) || incoming().isSuspended == false) &&
+          (!('canUploadNotes' in incoming()) || incoming().canUploadNotes == false)
         ));
 
-      // Students cannot self-approve membership, extend expiry, change role, or unsuspend themselves
+      // Students cannot self-approve membership, extend expiry, change role, grant upload permission, or unsuspend themselves
       allow update: if isValidId(userId) && (
         isAdmin() || (
           isOwner(userId) &&
@@ -64,6 +65,7 @@ service cloud.firestore {
             'passExpiry',
             'isSuspended',
             'suspensionReason',
+            'canUploadNotes',
             'email',
             'id',
             'createdAt'
@@ -196,11 +198,19 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    function canStudentUploadNotes() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.canUploadNotes == true &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuspended != true;
+    }
+
     // 7. Notifications: /notifications/{notifId}
     match /notifications/{notifId} {
       allow create: if isSignedIn() && isValidId(notifId) && (
         isAdmin() ||
-        (incoming().recipientId == 'admin' && incoming().type == 'payment_submitted')
+        (incoming().recipientId == 'admin' && incoming().type == 'payment_submitted') ||
+        (incoming().recipientId == 'admin' && incoming().type == 'note_submitted' && canStudentUploadNotes())
       );
       allow read: if isAdmin() || (
         isSignedIn() && (
@@ -255,6 +265,65 @@ service cloud.firestore {
     match /studyMaterials/{materialId} {
       allow read: if true;
       allow write: if isAdmin();
+    }
+
+    // 13. PDF Study Materials & Notes Approval Library: /noteMaterials/{noteId}
+    function isValidNoteMaterialCreate(data) {
+      return data.keys().hasAll([
+          'id', 'title', 'description', 'paperId', 'chapterId', 'chapterNumber',
+          'chapterTitle', 'attempt', 'category', 'fileName', 'storageFileName',
+          'fileUrl', 'fileSizeBytes', 'mimeType', 'uploaderId', 'uploaderName',
+          'uploaderRole', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id', 'title', 'description', 'paperId', 'chapterId', 'chapterNumber',
+          'chapterTitle', 'attempt', 'category', 'fileName', 'storageFileName',
+          'fileUrl', 'fileSizeBytes', 'mimeType', 'uploaderId', 'uploaderName',
+          'uploaderEmail', 'uploaderRole', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.id is string && data.id.size() > 0 && data.id.size() <= 128 &&
+        data.title is string && data.title.size() >= 3 && data.title.size() <= 200 &&
+        data.description is string && data.description.size() <= 1500 &&
+        data.paperId in ['paper1', 'paper2', 'paper3', 'paper4'] &&
+        data.chapterId is string && data.chapterId.size() > 0 && data.chapterId.size() <= 120 &&
+        data.chapterNumber is number && data.chapterNumber >= 1 && data.chapterNumber <= 50 &&
+        data.chapterTitle is string && data.chapterTitle.size() > 0 && data.chapterTitle.size() <= 200 &&
+        data.attempt in ['January 2027', 'May 2027', 'Both'] &&
+        data.category in [
+          'Chapter-wise Notes',
+          'Handwritten Notes',
+          'Practice Material',
+          'Important Questions',
+          'Previous Year Questions',
+          'Mock Tests'
+        ] &&
+        data.fileName is string && data.fileName.size() > 4 && data.fileName.size() <= 200 &&
+        data.storageFileName is string && data.storageFileName.size() > 4 && data.storageFileName.size() <= 200 &&
+        data.fileUrl is string && data.fileUrl.size() > 0 && data.fileUrl.size() <= 500 &&
+        data.fileSizeBytes is number && data.fileSizeBytes > 0 && data.fileSizeBytes <= 15728640 &&
+        data.mimeType == 'application/pdf' &&
+        data.uploaderId == request.auth.uid &&
+        data.uploaderName is string && data.uploaderName.size() > 0 && data.uploaderName.size() <= 100 &&
+        (!('uploaderEmail' in data) || (data.uploaderEmail is string && data.uploaderEmail.size() <= 150)) &&
+        data.createdAt is string && data.createdAt.size() <= 64 &&
+        data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    match /noteMaterials/{noteId} {
+      allow get, list: if isAdmin() ||
+        resource.data.status == 'approved' ||
+        (isSignedIn() && resource.data.uploaderId == request.auth.uid);
+
+      allow create: if isValidId(noteId) && (
+        (isAdmin() && incoming().id == noteId) ||
+        (canStudentUploadNotes() &&
+          incoming().id == noteId &&
+          incoming().uploaderRole == 'student' &&
+          incoming().status == 'pending' &&
+          isValidNoteMaterialCreate(incoming()))
+      );
+
+      allow update, delete: if isAdmin();
     }
   }
 }

@@ -5,20 +5,21 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'node:fs';
 import { createRequireOwnerAuth, VerifiedOwnerSession } from './src/server/ownerAuth';
+import { registerMaterialRoutes } from './src/server/materialStorage';
 
 dotenv.config();
 
 const firebaseConfigRaw = JSON.parse(
   fs.readFileSync(path.resolve(process.cwd(), 'firebase-applet-config.json'), 'utf8')
-) as { projectId: string };
+) as { projectId: string; firestoreDatabaseId: string };
 const requireOwnerAuth = createRequireOwnerAuth(firebaseConfigRaw.projectId);
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
-// Body parser with 20MB limit for image uploads
-app.use(express.json({ limit: '20mb' }));
-app.use(express.urlencoded({ extended: true, limit: '20mb' }));
+// Body parser with 25MB limit for image & PDF study material uploads
+app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
 // ============================================================================
 // SERVER-SIDE PROTECTED OWNER ROUTES (/api/owner/*)
@@ -38,6 +39,11 @@ app.get('/api/owner/session', (req: Request, res: Response) => {
 app.use('/api/owner', (_req: Request, res: Response) => {
   return res.status(404).json({ error: 'Owner API endpoint not found.' });
 });
+
+// ============================================================================
+// PROTECTED PDF STUDY MATERIAL ROUTES (/api/materials/*)
+// ============================================================================
+registerMaterialRoutes(app, firebaseConfigRaw);
 
 // Subject labels for CA Foundation
 const SUBJECT_LABELS: Record<string, string> = {

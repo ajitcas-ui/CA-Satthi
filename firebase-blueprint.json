@@ -32,6 +32,7 @@
         "learningPoints": { "type": "number" },
         "totalQuestionsAttempted": { "type": "number" },
         "totalQuestionsCorrect": { "type": "number" },
+        "canUploadNotes": { "type": "boolean" },
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" }
       },
@@ -395,6 +396,53 @@
         "createdAt": { "type": "string", "maxLength": 64 }
       },
       "required": ["id", "userId", "role", "content", "paperId", "language", "createdAt"]
+    },
+    "NoteMaterial": {
+      "title": "NoteMaterial",
+      "description": "Uploaded PDF notes, handwritten notes, practice materials, PYQs, and mock papers with approval workflow",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 1500 },
+        "paperId": { "type": "string", "enum": ["paper1", "paper2", "paper3", "paper4"] },
+        "chapterId": { "type": "string", "maxLength": 120 },
+        "chapterNumber": { "type": "number" },
+        "chapterTitle": { "type": "string", "maxLength": 200 },
+        "attempt": { "type": "string", "enum": ["January 2027", "May 2027", "Both"] },
+        "category": {
+          "type": "string",
+          "enum": [
+            "Chapter-wise Notes",
+            "Handwritten Notes",
+            "Practice Material",
+            "Important Questions",
+            "Previous Year Questions",
+            "Mock Tests"
+          ]
+        },
+        "fileName": { "type": "string", "maxLength": 200 },
+        "storageFileName": { "type": "string", "maxLength": 200 },
+        "fileUrl": { "type": "string", "maxLength": 500 },
+        "fileSizeBytes": { "type": "number" },
+        "mimeType": { "type": "string" },
+        "uploaderId": { "type": "string", "maxLength": 128 },
+        "uploaderName": { "type": "string", "maxLength": 100 },
+        "uploaderEmail": { "type": "string", "maxLength": 150 },
+        "uploaderRole": { "type": "string", "enum": ["admin", "student"] },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "rejectionReason": { "type": "string", "maxLength": 500 },
+        "reviewedBy": { "type": "string", "maxLength": 150 },
+        "reviewedAt": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": [
+        "id", "title", "paperId", "chapterId", "chapterNumber", "chapterTitle",
+        "attempt", "category", "fileName", "storageFileName", "fileUrl",
+        "fileSizeBytes", "mimeType", "uploaderId", "uploaderName", "uploaderRole",
+        "status", "createdAt", "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -489,6 +537,10 @@
     "/studyMaterials/{materialId}": {
       "schema": "StudyNote",
       "description": "Admin-managed revision notes and study materials"
+    },
+    "/noteMaterials/{noteId}": {
+      "schema": "NoteMaterial",
+      "description": "Structured PDF notes and study materials uploaded by Owner or permitted students with approval workflow"
     }
   }
 }

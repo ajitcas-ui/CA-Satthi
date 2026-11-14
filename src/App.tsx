@@ -18,7 +18,9 @@ import {
   SubjectChapter,
   MCQQuestion,
   StudyPresence,
+  StudyPdfMaterial,
 } from './types';
+import { CANONICAL_SYLLABUS } from './data/syllabusData';
 import { INITIAL_STUDY_TASKS } from './data/mockPlanner';
 import { MOCK_EXAM_UPDATES } from './data/mockUpdates';
 import {
@@ -39,7 +41,14 @@ import {
   updateUserProfile,
 } from './utils/storageDb';
 import { canUserAccessAdmin } from './utils/membershipRules';
-import { normalizeExamAttempt } from './utils/examAttempt';
+import {
+  normalizeExamAttempt,
+  buildAttemptChapterKey,
+  buildAttemptChapterProgressMap,
+  filterStudySessionsByAttempt,
+  filterTestResultsByAttempt,
+  filterStudyTasksByAttempt,
+} from './utils/examAttempt';
 import { formatIsoDateLocal } from './utils/studyTracker';
 import { resolvePublicDisplayName } from './utils/leaderboard';
 import { Sidebar } from './components/Sidebar';
@@ -86,6 +95,8 @@ import {
   subscribeToCustomQuestions,
   subscribeToSubjectChapters,
   subscribeToStudyMaterials,
+  subscribeToApprovedNoteMaterials,
+  subscribeToMySubmittedNotes,
   subscribeToStudyPresence,
   saveStudySessionToDb,
   upsertStudyPresence,
@@ -270,6 +281,8 @@ export default function App() {
   });
   const [cloudCustomQuestions, setCloudCustomQuestions] = useState<MCQQuestion[]>([]);
   const [cloudStudyMaterials, setCloudStudyMaterials] = useState<StudyNote[]>([]);
+  const [approvedPdfMaterials, setApprovedPdfMaterials] = useState<StudyPdfMaterial[]>([]);
+  const [mySubmittedNotes, setMySubmittedNotes] = useState<StudyPdfMaterial[]>([]);
   const [subjectChapters, setSubjectChapters] = useState<SubjectChapter[]>(() => getSubjectChapters());
   const [examUpdates, setExamUpdates] = useState<ExamUpdate[]>(MOCK_EXAM_UPDATES);
 
@@ -342,6 +355,7 @@ export default function App() {
         clearCurrentUser();
         setUserPayments([]);
         setNotifications([]);
+        setMySubmittedNotes([]);
       }
     });
     return () => {
@@ -382,6 +396,10 @@ export default function App() {
       setCloudStudyMaterials(cloudMats);
     });
 
+    const unsubApprovedPdf = subscribeToApprovedNoteMaterials((pdfList) => {
+      setApprovedPdfMaterials(pdfList);
+    });
+
     const syncRoute = () => {
       setRouteKind(readCurrentOwnerRoute());
     };
@@ -395,6 +413,7 @@ export default function App() {
       unsubChapters();
       unsubQuestions();
       unsubMaterials();
+      unsubApprovedPdf();
       window.removeEventListener('hashchange', syncRoute);
       window.removeEventListener('popstate', syncRoute);
     };
@@ -490,6 +509,10 @@ export default function App() {
       setLivePeers(peers);
     });
 
+    const unsubMyNotes = subscribeToMySubmittedNotes(currentUser.id, (list) => {
+      setMySubmittedNotes(list);
+    });
+
     return () => {
       unsubBookmarks();
       unsubTests();
@@ -499,6 +522,7 @@ export default function App() {
       unsubProgress();
       unsubNotifs();
       unsubPresence();
+      unsubMyNotes();
     };
   }, [currentUser?.id, isSuperAdmin]);
 
@@ -561,6 +585,7 @@ export default function App() {
       questionsCorrect: qCorr,
       startedAt: sessionStartedAtRef.current,
       endedAt: now.toISOString(),
+      examAttempt: selectedAttempt,
     };
 
     pendingMinutesRef.current = 0;
@@ -633,7 +658,7 @@ export default function App() {
       window.removeEventListener('beforeunload', onBeforeUnload);
       flushActiveStudySession(activeTab);
     };
-  }, [activeTab, currentUser?.id, selectedPaperForPractice]);
+  }, [activeTab, currentUser?.id, selectedPaperForPractice, selectedAttempt]);
 
   // Daily study reminder scheduler
   useEffect(() => {
@@ -666,6 +691,7 @@ export default function App() {
       durationMinutes: minutes,
       startedAt: new Date(now.getTime() - minutes * 60_000).toISOString(),
       endedAt: now.toISOString(),
+      examAttempt: selectedAttempt,
     };
     const updatedLocal = saveStudySessionLocal(record);
     if (uid === 'guest') {
@@ -688,20 +714,25 @@ export default function App() {
   };
 
   const handleTestCompleted = (result: TestAttemptResult) => {
-    setTestHistory((prev) => [result, ...prev]);
+    const attemptTaggedResult: TestAttemptResult = {
+      ...result,
+      examAttempt: result.examAttempt || selectedAttempt,
+    };
+    setTestHistory((prev) => [attemptTaggedResult, ...prev]);
     if (currentUser?.id && currentUser.id !== 'guest') {
-      saveTestResultToDb(currentUser.id, result).catch(console.error);
+      saveTestResultToDb(currentUser.id, attemptTaggedResult).catch(console.error);
     }
-    setQuestionsSolvedToday((prev) => prev + result.attempted);
-    setTotalQuestionsSolved((prev) => prev + result.attempted);
-    sessionQuestionsRef.current.attempted += result.attempted;
-    sessionQuestionsRef.current.correct += result.correct;
+    setQuestionsSolvedToday((prev) => prev + attemptTaggedResult.attempted);
+    setTotalQuestionsSolved((prev) => prev + attemptTaggedResult.attempted);
+    sessionQuestionsRef.current.attempted += attemptTaggedResult.attempted;
+    sessionQuestionsRef.current.correct += attemptTaggedResult.correct;
   };
 
   const handleUpdateChapterProgress = (chapterId: string, status: 'pending' | 'revising' | 'mastered') => {
-    setChapterProgress((prev) => ({ ...prev, [chapterId]: status }));
+    const scopedKey = buildAttemptChapterKey(chapterId, selectedAttempt);
+    setChapterProgress((prev) => ({ ...prev, [scopedKey]: status }));
     if (currentUser?.id && currentUser.id !== 'guest') {
-      saveChapterProgressToDb(currentUser.id, chapterId, status).catch(() => {});
+      saveChapterProgressToDb(currentUser.id, scopedKey, status).catch(() => {});
     }
   };
 
@@ -769,7 +800,32 @@ export default function App() {
     return Array.from(map.values());
   }, [cloudStudyMaterials]);
 
-  const pendingTasksCount = tasks.filter((t) => !t.completed).length;
+  const attemptChapterIds = React.useMemo(
+    () => (subjectChapters.length >= 46 ? subjectChapters : CANONICAL_SYLLABUS).map((c) => c.id),
+    [subjectChapters]
+  );
+
+  const attemptChapterProgress = React.useMemo(
+    () => buildAttemptChapterProgressMap(chapterProgress, attemptChapterIds, selectedAttempt),
+    [chapterProgress, attemptChapterIds, selectedAttempt]
+  );
+
+  const attemptStudySessions = React.useMemo(
+    () => filterStudySessionsByAttempt(studySessions, selectedAttempt),
+    [studySessions, selectedAttempt]
+  );
+
+  const attemptTestHistory = React.useMemo(
+    () => filterTestResultsByAttempt(testHistory, selectedAttempt),
+    [testHistory, selectedAttempt]
+  );
+
+  const attemptStudyTasks = React.useMemo(
+    () => filterStudyTasksByAttempt(tasks, selectedAttempt),
+    [tasks, selectedAttempt]
+  );
+
+  const pendingTasksCount = attemptStudyTasks.filter((t) => !t.completed).length;
 
   // 1. Dedicated Owner Login Portal (/owner-login, or /owner-dashboard without owner authorization)
   if (routeResolution.screen === 'owner-login') {
@@ -866,13 +922,13 @@ export default function App() {
                 onOpenReferralModal={() => setIsReferralModalOpen(true)}
                 currentUser={currentUser}
                 countdownConfig={countdownConfig}
-                testHistory={testHistory}
+                testHistory={attemptTestHistory}
                 userPayments={resolvedPayments}
-                studySessions={studySessions}
-                chapterProgress={chapterProgress}
+                studySessions={attemptStudySessions}
+                chapterProgress={attemptChapterProgress}
                 allQuestions={combinedQuestions}
                 studyNotes={combinedStudyNotes}
-                tasks={tasks}
+                tasks={attemptStudyTasks}
                 livePeersCount={livePeers.length}
                 examUpdates={examUpdates}
                 onOpenAuthModal={() => setIsAuthModalOpen(true)}
@@ -920,12 +976,12 @@ export default function App() {
                 <StudyPlannerView
                   language={language}
                   selectedAttempt={selectedAttempt}
-                  tasks={tasks}
+                  tasks={attemptStudyTasks}
                   setTasks={setTasks}
                   onStudySessionComplete={handleStudySessionComplete}
                   currentUser={currentUser}
                   streak={streak}
-                  chapterProgress={chapterProgress}
+                  chapterProgress={attemptChapterProgress}
                   onUpdateChapterProgress={handleUpdateChapterProgress}
                   allQuestions={combinedQuestions}
                   onStartChapterPractice={(pId) => {
@@ -947,7 +1003,7 @@ export default function App() {
                   setBookmarkedIds={setBookmarkedIds}
                   currentUser={currentUser}
                   allQuestionsOverride={combinedQuestions}
-                  chapterProgress={chapterProgress}
+                  chapterProgress={attemptChapterProgress}
                   onUpdateChapterProgress={handleUpdateChapterProgress}
                 />
               )}
@@ -980,6 +1036,11 @@ export default function App() {
                 <StudyNotesView
                   language={language}
                   studyNotes={combinedStudyNotes}
+                  pdfMaterials={approvedPdfMaterials}
+                  mySubmittedNotes={mySubmittedNotes}
+                  subjectChapters={subjectChapters}
+                  currentUser={currentUser}
+                  isSuperAdmin={isSuperAdmin}
                   selectedAttempt={selectedAttempt}
                   onChangeAttempt={handleChangeAttempt}
                 />
@@ -994,10 +1055,10 @@ export default function App() {
                   studiedTodayMinutes={studiedTodayMinutes}
                   totalQuestionsSolved={totalQuestionsSolved}
                   accuracyRate={accuracyRate}
-                  testHistory={testHistory}
-                  studySessions={studySessions}
+                  testHistory={attemptTestHistory}
+                  studySessions={attemptStudySessions}
                   currentUser={currentUser}
-                  chapterProgress={chapterProgress}
+                  chapterProgress={attemptChapterProgress}
                   onUpdateDailyGoal={(mins) => handleUpdateUserProfile({ dailyGoalMinutes: mins })}
                 />
               )}

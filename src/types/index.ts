@@ -90,9 +90,49 @@ export interface StudyTask {
   completed: boolean;
   date: string; // YYYY-MM-DD
   priority: 'high' | 'medium' | 'low';
+  examAttempt?: ExamAttemptId;
 }
 
 export type ExamAttemptId = 'January 2027' | 'May 2027';
+
+export type MaterialCategory =
+  | 'Chapter-wise Notes'
+  | 'Handwritten Notes'
+  | 'Practice Material'
+  | 'Important Questions'
+  | 'Previous Year Questions'
+  | 'Mock Tests';
+
+export type MaterialApprovalStatus = 'pending' | 'approved' | 'rejected';
+
+export type MaterialAttemptScope = ExamAttemptId | 'Both';
+
+export interface StudyPdfMaterial {
+  id: string;
+  title: string;
+  description: string;
+  paperId: PaperId;
+  chapterId: string;
+  chapterNumber: number;
+  chapterTitle: string;
+  attempt: MaterialAttemptScope;
+  category: MaterialCategory;
+  fileName: string;
+  storageFileName: string;
+  fileUrl: string;
+  fileSizeBytes: number;
+  mimeType: 'application/pdf';
+  uploaderId: string;
+  uploaderName: string;
+  uploaderEmail?: string;
+  uploaderRole: 'admin' | 'student';
+  status: MaterialApprovalStatus;
+  rejectionReason?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface StudyNote {
   id: string;
@@ -150,6 +190,7 @@ export interface TestAttemptResult {
   percentage: number;
   timeSpentSeconds: number;
   userAnswers: Record<string, number>; // questionId -> selectedOption
+  examAttempt?: ExamAttemptId;
 }
 
 // ============================================================================
@@ -196,6 +237,7 @@ export interface UserProfile {
   totalQuestionsCorrect?: number;
   dailyGoalMinutes?: number;
   studyMinutesTotal?: number;
+  canUploadNotes?: boolean;
 }
 
 export interface StudySession {
@@ -204,6 +246,7 @@ export interface StudySession {
   date: string; // YYYY-MM-DD
   paperId?: PaperId;
   chapterId?: string;
+  examAttempt?: ExamAttemptId;
   activityType: 'practice' | 'mock' | 'notes' | 'planner' | 'doubtSolver' | 'dailyChallenge' | 'general';
   durationMinutes: number;
   questionsAttempted?: number;
@@ -236,7 +279,11 @@ export interface AppNotification {
     | 'exam_update'
     | 'study_reminder'
     | 'broadcast'
-    | 'announcement';
+    | 'announcement'
+    | 'note_submitted'
+    | 'note_approved'
+    | 'note_rejected'
+    | 'upload_permission';
   read: boolean;
   relatedId?: string;
   createdAt: string;
@@ -248,6 +295,7 @@ export type OwnerDashboardSection =
   | 'students'
   | 'live_activity'
   | 'content'
+  | 'notes_management'
   | 'groups'
   | 'notifications'
   | 'analytics';
@@ -287,7 +335,7 @@ export interface AuditLogEntry {
   targetId?: string;
   targetName?: string;
   timestamp: string;
-  type: 'payment' | 'user' | 'content' | 'moderation' | 'exam_config';
+  type: 'payment' | 'user' | 'content' | 'notes' | 'moderation' | 'exam_config';
 }
 
 export interface SyllabusTopicDetail {
