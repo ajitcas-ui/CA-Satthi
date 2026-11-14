@@ -1,5 +1,6 @@
 import React from 'react';
-import { Language, UserProfile, MembershipStatus } from '../types';
+import { ExamAttemptId, Language, UserProfile, MembershipStatus } from '../types';
+import { getAttemptMetadata } from '../utils/examAttempt';
 import { 
   Lock, 
   Sparkles, 
@@ -19,6 +20,7 @@ import { playChimeSound } from '../utils/audio';
 
 interface MembershipLockScreenProps {
   language: Language;
+  selectedAttempt?: ExamAttemptId;
   currentUser: UserProfile;
   membershipStatus: MembershipStatus;
   expiresAt?: string;
@@ -30,6 +32,7 @@ interface MembershipLockScreenProps {
 
 export const MembershipLockScreen: React.FC<MembershipLockScreenProps> = ({
   language,
+  selectedAttempt = 'January 2027',
   currentUser,
   membershipStatus,
   expiresAt,
@@ -38,6 +41,7 @@ export const MembershipLockScreen: React.FC<MembershipLockScreenProps> = ({
   onGoHome,
   sectionName,
 }) => {
+  const attemptMeta = getAttemptMetadata(selectedAttempt);
   const isGuest = !currentUser || currentUser.id === 'guest';
   const isPending = membershipStatus === 'pending';
   const isExpired = membershipStatus === 'expired';
@@ -50,10 +54,10 @@ export const MembershipLockScreen: React.FC<MembershipLockScreenProps> = ({
   return (
     <div className="py-8 sm:py-12 px-4 max-w-3xl mx-auto space-y-6">
       {/* Main Lock Card */}
-      <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 sm:p-8 text-center relative overflow-hidden">
+      <div className="bg-white dark:bg-[#0F1936] rounded-3xl border border-slate-200 dark:border-[#213059] shadow-xl p-6 sm:p-8 text-center relative overflow-hidden">
         {/* Glow Effects */}
-        <div className="absolute -top-16 -right-16 w-44 h-44 bg-blue-500/10 dark:bg-blue-500/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-16 -left-16 w-44 h-44 bg-amber-500/10 dark:bg-amber-500/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -top-16 -right-16 w-44 h-44 bg-violet-500/10 dark:bg-violet-500/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-16 -left-16 w-44 h-44 bg-indigo-500/10 dark:bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
 
         {/* Status Badge */}
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider mb-4 border shadow-2xs">
@@ -68,15 +72,15 @@ export const MembershipLockScreen: React.FC<MembershipLockScreenProps> = ({
               <span>{language === 'en' ? 'Membership Expired' : 'सदस्यता समाप्त'}</span>
             </span>
           ) : (
-            <span className="bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-200 border-blue-300 dark:border-blue-800 flex items-center gap-1.5 px-2 py-0.5 rounded-full">
-              <Lock className="w-3.5 h-3.5 text-blue-600" />
-              <span>{language === 'en' ? 'Premium Learning Pass Required' : 'प्रीमियम अध्ययन पास आवश्यक'}</span>
+            <span className="bg-violet-100 text-[#172554] dark:bg-violet-950 dark:text-violet-200 border-violet-300 dark:border-violet-800 flex items-center gap-1.5 px-2 py-0.5 rounded-full">
+              <Lock className="w-3.5 h-3.5 text-violet-700 dark:text-violet-300" />
+              <span>{language === 'en' ? `Premium Pass · ${attemptMeta.shortLabel.en}` : `प्रीमियम पास · ${attemptMeta.shortLabel.hi}`}</span>
             </span>
           )}
         </div>
 
         {/* Header Icon */}
-        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center mx-auto shadow-lg shadow-blue-500/25 mb-4">
+        <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-3xl bg-gradient-to-tr from-[#0B1739] via-[#172554] to-violet-700 text-white flex items-center justify-center mx-auto shadow-lg shadow-violet-600/25 mb-4">
           <Lock className="w-8 h-8 sm:w-10 sm:h-10" />
         </div>
 
@@ -115,23 +119,23 @@ export const MembershipLockScreen: React.FC<MembershipLockScreenProps> = ({
         </p>
 
         {/* Pricing Box */}
-        <div className="my-6 p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-blue-50 via-indigo-50/50 to-slate-50 dark:from-blue-950/40 dark:via-indigo-950/30 dark:to-slate-900 border border-blue-200 dark:border-blue-800 max-w-md mx-auto">
+        <div className="my-6 p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-violet-50/90 via-indigo-50/50 to-slate-50 dark:from-[#141F45] dark:via-violet-950/30 dark:to-[#0F1936] border border-violet-200 dark:border-violet-800 max-w-md mx-auto">
           <div className="flex items-center justify-between">
             <div className="text-left">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300 block">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-violet-700 dark:text-violet-300 block">
                 {language === 'en' ? 'Monthly All-Access Pass' : 'मासिक ऑल-एक्सेस पास'}
               </span>
               <span className="text-xs text-slate-500 dark:text-slate-400">
-                {language === 'en' ? '30 Days Complete Validity' : '30 दिनों की पूर्ण वैधता'}
+                {language === 'en' ? 'Jan 2027 & May 2027 · 30 Days Validity' : 'जनवरी 2027 व मई 2027 · 30 दिन'}
               </span>
             </div>
             <div className="text-right">
-              <span className="text-3xl font-extrabold text-slate-900 dark:text-white">₹5</span>
+              <span className="text-3xl font-extrabold text-[#0F1E46] dark:text-white">₹5</span>
               <span className="text-xs text-slate-500 dark:text-slate-400 font-medium"> / {language === 'en' ? 'month' : 'माह'}</span>
             </div>
           </div>
 
-          <div className="mt-3 pt-3 border-t border-blue-200/60 dark:border-blue-800/60 text-left text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2">
+          <div className="mt-3 pt-3 border-t border-violet-200/60 dark:border-violet-800/60 text-left text-xs text-slate-600 dark:text-slate-300 flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>
               {language === 'en'
@@ -191,7 +195,7 @@ export const MembershipLockScreen: React.FC<MembershipLockScreenProps> = ({
           {isGuest && onOpenAuthModal ? (
             <button
               onClick={onOpenAuthModal}
-              className="w-full sm:flex-1 py-3 px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
+              className="w-full sm:flex-1 py-3 px-6 rounded-2xl bg-gradient-to-r from-[#172554] to-violet-700 hover:from-[#1e316e] hover:to-violet-800 text-white font-bold text-sm shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2"
             >
               <ShieldCheck className="w-4 h-4" />
               <span>{language === 'en' ? 'Sign In with Google to Unlock' : 'अनलॉक हेतु गूगल से साइन इन करें'}</span>
@@ -199,7 +203,7 @@ export const MembershipLockScreen: React.FC<MembershipLockScreenProps> = ({
           ) : (
             <button
               onClick={handlePayClick}
-              className="w-full sm:flex-1 py-3 px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
+              className="w-full sm:flex-1 py-3 px-6 rounded-2xl bg-gradient-to-r from-[#172554] to-violet-700 hover:from-[#1e316e] hover:to-violet-800 text-white font-bold text-sm shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2"
             >
               <CreditCard className="w-4 h-4" />
               <span>

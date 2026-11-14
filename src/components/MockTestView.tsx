@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Language, MockTest, TestAttemptResult, UserProfile, PaymentRequest } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ExamAttemptId, Language, MockTest, TestAttemptResult, UserProfile } from '../types';
 import { MOCK_TESTS } from '../data/mockTests';
 import { calculateQuizScore, ScoreBreakdown } from '../utils/quizEngine';
 import { checkUserHasValidPass, getStudentMembershipStatus, getUserPaymentHistory } from '../utils/storageDb';
+import { SUPPORTED_EXAM_ATTEMPTS, filterMockTestsForAttempt, getAttemptMetadata } from '../utils/examAttempt';
 import { playChimeSound } from '../utils/audio';
 import confetti from 'canvas-confetti';
 import { 
@@ -10,7 +11,6 @@ import {
   Clock, 
   AlertTriangle, 
   CheckCircle2, 
-  XCircle, 
   Bookmark, 
   ArrowLeft, 
   ArrowRight, 
@@ -18,19 +18,19 @@ import {
   FileText, 
   ChevronRight, 
   ShieldCheck, 
-  HelpCircle,
-  BarChart2,
   Lock,
-  Sparkles,
   CreditCard,
   X,
-  Gift
+  Gift,
+  Calendar,
 } from 'lucide-react';
 
 interface MockTestViewProps {
   language: Language;
   onTestCompleted: (result: TestAttemptResult) => void;
   currentUser?: UserProfile;
+  selectedAttempt: ExamAttemptId;
+  onChangeAttempt?: (attempt: ExamAttemptId) => void;
   onOpenPaymentModal?: () => void;
   onOpenReferralModal?: () => void;
 }
@@ -39,12 +39,21 @@ export const MockTestView: React.FC<MockTestViewProps> = ({
   language,
   onTestCompleted,
   currentUser,
+  selectedAttempt,
+  onChangeAttempt,
   onOpenPaymentModal,
   onOpenReferralModal,
 }) => {
   const [activeTest, setActiveTest] = useState<MockTest | null>(null);
   const [testState, setTestState] = useState<'list' | 'running' | 'result'>('list');
   const [lockedModalTest, setLockedModalTest] = useState<MockTest | null>(null);
+  const [showAllAttempts, setShowAllAttempts] = useState(false);
+
+  const attemptMeta = useMemo(() => getAttemptMetadata(selectedAttempt), [selectedAttempt]);
+  const visibleMockTests = useMemo(
+    () => filterMockTestsForAttempt(MOCK_TESTS, selectedAttempt, showAllAttempts),
+    [selectedAttempt, showAllAttempts]
+  );
 
   // Test session state
   const [currentQIndex, setCurrentQIndex] = useState(0);
@@ -162,16 +171,64 @@ export const MockTestView: React.FC<MockTestViewProps> = ({
   if (testState === 'list') {
     return (
       <div className="space-y-6 pb-20 lg:pb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <Award className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            {language === 'en' ? 'CA Foundation Mock Tests (Jan 2027)' : 'सीए फाउंडेशन मॉक टेस्ट (जनवरी 2027)'}
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-            {language === 'en'
-              ? 'Simulate real January 2027 ICAI exam conditions with negative marking (+1 / -0.25)'
-              : 'जनवरी 2027 आईसीएआई परीक्षा प्रारूप और -0.25 निगेटिव मार्किंग के साथ वास्तविक अभ्यास करें'}
-          </p>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-[#0F1E46] dark:text-slate-100 flex items-center gap-2">
+              <Award className="w-6 h-6 text-violet-700 dark:text-violet-400" />
+              {language === 'en'
+                ? `CA Foundation Mock Tests (${attemptMeta.shortLabel.en})`
+                : `सीए फाउंडेशन मॉक टेस्ट (${attemptMeta.shortLabel.hi})`}
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+              {language === 'en'
+                ? `Simulate real ${attemptMeta.fullLabel.en} ICAI exam conditions with negative marking (+1 / -0.25)`
+                : `${attemptMeta.fullLabel.hi} आईसीएआई परीक्षा प्रारूप और -0.25 निगेटिव मार्किंग के साथ वास्तविक अभ्यास करें`}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+            {onChangeAttempt && (
+              <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-[#131E3D] border border-slate-200 dark:border-[#24335C]">
+                <Calendar className="w-3.5 h-3.5 text-violet-700 dark:text-violet-400 ml-1" />
+                {SUPPORTED_EXAM_ATTEMPTS.map((attempt) => {
+                  const meta = getAttemptMetadata(attempt);
+                  const active = selectedAttempt === attempt;
+                  return (
+                    <button
+                      key={attempt}
+                      type="button"
+                      onClick={() => onChangeAttempt(attempt)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        active
+                          ? 'bg-gradient-to-r from-[#172554] to-violet-700 text-white shadow-xs'
+                          : 'text-slate-600 dark:text-slate-300'
+                      }`}
+                    >
+                      {meta.shortLabel[language]}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShowAllAttempts((prev) => !prev)}
+              className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
+                showAllAttempts
+                  ? 'bg-violet-700 border-violet-700 text-white'
+                  : 'bg-white dark:bg-[#0F1936] border-slate-200 dark:border-[#24335C] text-slate-700 dark:text-slate-200'
+              }`}
+            >
+              {showAllAttempts
+                ? language === 'en'
+                  ? 'Showing All Attempts'
+                  : 'सभी सत्र दिख रहे हैं'
+                : language === 'en'
+                  ? `Only ${attemptMeta.shortLabel.en}`
+                  : `केवल ${attemptMeta.shortLabel.hi}`}
+            </button>
+          </div>
         </div>
 
         {/* Negative marking reminder box */}
@@ -197,22 +254,22 @@ export const MockTestView: React.FC<MockTestViewProps> = ({
           return (
             <>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {MOCK_TESTS.map((test) => {
+                {visibleMockTests.map((test) => {
                   const isTestLocked = Boolean(test.isPremium && !hasPass);
 
                   return (
                     <div
                       key={test.id}
-                      className={`bg-white dark:bg-slate-900 rounded-2xl p-5 border shadow-xs transition-all flex flex-col justify-between ${
+                      className={`bg-white dark:bg-[#0F1936] rounded-2xl p-5 border shadow-xs transition-all flex flex-col justify-between ${
                         isTestLocked 
                           ? 'border-amber-200/80 dark:border-amber-900/60 hover:border-amber-400' 
-                          : 'border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 hover:shadow-md'
+                          : 'border-slate-200/90 dark:border-[#213059] hover:border-violet-400 dark:hover:border-violet-600 hover:shadow-md'
                       }`}
                     >
                       <div>
                         <div className="flex items-center justify-between mb-2">
-                          <div className="flex items-center gap-1.5">
-                            <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 text-xs font-bold border border-blue-200 dark:border-blue-800">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 text-xs font-bold border border-violet-200 dark:border-violet-800">
                               {test.paperId.toUpperCase()}
                             </span>
                             {test.isPremium ? (
@@ -234,13 +291,13 @@ export const MockTestView: React.FC<MockTestViewProps> = ({
                             )}
                           </div>
 
-                          <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold flex items-center gap-1">
-                            <Clock className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                          <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold flex items-center gap-1 tabular-nums">
+                            <Clock className="w-3.5 h-3.5 text-violet-700 dark:text-violet-400" />
                             {test.durationMinutes} {language === 'en' ? 'mins' : 'मिनट'}
                           </span>
                         </div>
 
-                        <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base mb-2">
+                        <h3 className="font-bold text-[#0F1E46] dark:text-slate-100 text-base mb-2">
                           {test.title[language]}
                         </h3>
 
@@ -248,14 +305,14 @@ export const MockTestView: React.FC<MockTestViewProps> = ({
                           {test.instructions[language]}
                         </p>
 
-                        <div className="bg-slate-50 dark:bg-slate-800/60 rounded-lg p-2.5 text-xs text-slate-700 dark:text-slate-300 mb-4 space-y-1">
+                        <div className="bg-slate-50 dark:bg-[#131E3D] rounded-lg p-2.5 text-xs text-slate-700 dark:text-slate-300 mb-4 space-y-1 border border-slate-100 dark:border-[#24335C]">
                           <div className="flex justify-between">
                             <span className="text-slate-500 dark:text-slate-400">{language === 'en' ? 'Total Questions:' : 'कुल प्रश्न:'}</span>
-                            <span className="font-bold">{test.questions.length}</span>
+                            <span className="font-bold tabular-nums">{test.questions.length}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-slate-500 dark:text-slate-400">{language === 'en' ? 'Marking:' : 'मार्किंग:'}</span>
-                            <span className="font-bold text-blue-700 dark:text-blue-400">+1 / -0.25</span>
+                            <span className="font-bold text-violet-700 dark:text-violet-400">+1 / -0.25</span>
                           </div>
                         </div>
                       </div>
@@ -274,7 +331,7 @@ export const MockTestView: React.FC<MockTestViewProps> = ({
                       ) : (
                         <button
                           onClick={() => handleStartTest(test)}
-                          className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs transition-all active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
+                          className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#172554] to-violet-700 hover:from-[#1E3A8A] hover:to-violet-800 text-white font-bold text-xs shadow-xs transition-all active:scale-[0.98] cursor-pointer flex items-center justify-center gap-2"
                         >
                           <span>{language === 'en' ? 'Start Mock Test' : 'मॉक टेस्ट शुरू करें'}</span>
                           <ChevronRight className="w-4 h-4" />

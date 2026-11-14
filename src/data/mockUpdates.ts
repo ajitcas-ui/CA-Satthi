@@ -6,6 +6,7 @@ export const MOCK_EXAM_UPDATES: ExamUpdate[] = [
     date: 'Jan 2027 Attempt',
     category: 'Guidance',
     isImportant: true,
+    applicableAttempts: ['January 2027'],
     title: {
       en: 'CA Foundation January 2027 Paper Timings & Structure',
       hi: 'सीए फाउंडेशन जनवरी 2027 परीक्षा पैटर्न व समय',
@@ -29,6 +30,32 @@ Admit cards are usually uploaded 14 days prior to the first examination date. Ke
 • पेपर 4: व्यावसायिक अर्थशास्त्र (100 अंक, 2 घंटे, दोपहर 2:00 से 4:00, OMR शीट) - पढ़ने का अतिरिक्त समय नहीं। नकारात्मक अंकन (-0.25) लागू।
 
 प्रवेश पत्र (Admit Card) परीक्षा से लगभग 14 दिन पूर्व जारी किए जाते हैं।`,
+    },
+  },
+  {
+    id: 'upd_may27_1',
+    date: 'May 2027 Attempt',
+    category: 'Syllabus',
+    isImportant: true,
+    applicableAttempts: ['May 2027'],
+    title: {
+      en: 'CA Foundation May 2027 Attempt: Eligibility, Syllabus & Paper Schedule',
+      hi: 'सीए फाउंडेशन मई 2027 परीक्षा: पात्रता, पाठ्यक्रम एवं परीक्षा प्रारूप',
+    },
+    summary: {
+      en: 'May 2027 follows the 4-Paper ICAI New Scheme (46 official chapters). Complete SSP registration & 4-month study period rules before applying on icaiexam.icai.org.',
+      hi: 'मई 2027 परीक्षा भी 4-पेपर आईसीएआई नई योजना (46 अध्याय) पर आधारित है। आवेदन से पूर्व 4 माह की अध्ययन अवधि एवं SSP पंजीकरण सुनिश्चित करें।',
+    },
+    detailedContent: {
+      en: `CA Foundation May 2027 Preparation & Eligibility Checklist:
+• Study Period Rule: Register with ICAI Board of Studies (SSP Portal) on or before January 1, 2027 to complete the mandatory 4-month study period for May 2027.
+• Applicable Syllabus: All 46 chapters across Paper 1 (Accounting), Paper 2 (Business Laws), Paper 3 (Quantitative Aptitude), and Paper 4 (Business Economics).
+• Official Timings: Papers 1 & 2 (2:00 PM - 5:00 PM), Papers 3 & 4 (2:00 PM - 4:00 PM with -0.25 negative marking).
+• Tentative Countdown: Exact May 2027 exam dates will activate once ICAI releases the official notification and Super Admin verifies the schedule.`,
+      hi: `सीए फाउंडेशन मई 2027 पात्रता एवं तैयारी बिंदु:
+• अध्ययन अवधि नियम: मई 2027 परीक्षा में बैठने हेतु आईसीएआई SSP पोर्टल पर 1 जनवरी 2027 तक पंजीकरण व न्यूनतम 4 माह की अध्ययन अवधि आवश्यक है।
+• लागू पाठ्यक्रम: चारों विषयों (लेखांकन, व्यापारिक कानून, गणित/सांख्यिकी व अर्थशास्त्र) के सभी 46 अध्याय।
+• समय सारणी: पेपर 1 व 2 (दोपहर 2 से 5 बजे), पेपर 3 व 4 (दोपहर 2 से 4 बजे, -0.25 निगेटिव मार्किंग)।`,
     },
   },
   {

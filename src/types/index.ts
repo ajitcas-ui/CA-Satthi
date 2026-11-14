@@ -92,6 +92,8 @@ export interface StudyTask {
   priority: 'high' | 'medium' | 'low';
 }
 
+export type ExamAttemptId = 'January 2027' | 'May 2027';
+
 export interface StudyNote {
   id: string;
   paperId: PaperId;
@@ -99,6 +101,7 @@ export interface StudyNote {
   topicTitle: BilingualText;
   readTimeMinutes: number;
   tags: string[];
+  applicableAttempts?: ExamAttemptId[];
   summary: BilingualText;
   keyPoints: BilingualText[];
   formulasOrRules?: Array<{
@@ -119,6 +122,7 @@ export interface MockTest {
   questions: MCQQuestion[];
   instructions: BilingualText;
   isPremium?: boolean;
+  applicableAttempts?: ExamAttemptId[];
 }
 
 export interface ExamUpdate {
@@ -129,6 +133,7 @@ export interface ExamUpdate {
   summary: BilingualText;
   detailedContent: BilingualText;
   isImportant?: boolean;
+  applicableAttempts?: ExamAttemptId[];
 }
 
 export interface TestAttemptResult {

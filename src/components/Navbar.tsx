@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { AppNotification, Language, NavTab, ThemeMode, UserProfile } from '../types';
+import { AppNotification, ExamAttemptId, Language, NavTab, ThemeMode, UserProfile } from '../types';
 import {
   Languages,
   GraduationCap,
@@ -12,17 +12,21 @@ import {
   Moon,
   Check,
   User,
+  Calendar,
 } from 'lucide-react';
 import { sendTestNotification } from '../utils/notificationService';
 import { playChimeSound } from '../utils/audio';
 import { canUserAccessAdmin } from '../utils/membershipRules';
 import { markNotificationReadInDb } from '../firebase/services';
+import { SUPPORTED_EXAM_ATTEMPTS, getAttemptMetadata } from '../utils/examAttempt';
 
 interface NavbarProps {
   language: Language;
   setLanguage: (lang: Language) => void;
   activeTab: NavTab;
   setActiveTab: (tab: NavTab) => void;
+  selectedAttempt: ExamAttemptId;
+  onChangeAttempt: (attempt: ExamAttemptId) => void;
   streak: number;
   studiedTodayMinutes: number;
   currentUser: UserProfile;
@@ -37,11 +41,29 @@ interface NavbarProps {
   onOpenReferralModal?: () => void;
 }
 
+const TAB_TITLES: Record<NavTab, { en: string; hi: string }> = {
+  home: { en: 'Student Dashboard', hi: 'विद्यार्थी डैशबोर्ड' },
+  practice: { en: 'Practice Arena & PYQs', hi: 'अभ्यास एवं विगत प्रश्न' },
+  mocks: { en: 'Mock Test Series', hi: 'मॉक टेस्ट श्रृंखला' },
+  notes: { en: 'Revision Notes & Modules', hi: 'रिवीजन नोट्स व मॉड्यूल' },
+  planner: { en: '46-Chapter Syllabus & Planner', hi: '46-अध्याय पाठ्यक्रम व प्लानर' },
+  progress: { en: 'Study Tracker & Analytics', hi: 'अध्ययन ट्रैकर' },
+  dailyChallenge: { en: 'Daily 10 Quiz', hi: 'दैनिक 10 प्रश्न' },
+  doubtSolver: { en: 'CA Saathi AI Doubt Solver', hi: 'सीए साथी AI समाधान' },
+  leaderboard: { en: 'All India Rankings', hi: 'ऑल इंडिया रैंकिंग' },
+  community: { en: 'Common Study Community', hi: 'साझा अध्ययन समुदाय' },
+  updates: { en: 'ICAI Updates & Passing Criteria', hi: 'आईसीएआई सूचनाएं' },
+  payment: { en: '₹5 UPI Membership', hi: '₹5 यूपीआई सदस्यता' },
+  admin: { en: 'Owner Console', hi: 'ओनर कंसोल' },
+};
+
 export const Navbar: React.FC<NavbarProps> = ({
   language,
   setLanguage,
   activeTab,
   setActiveTab,
+  selectedAttempt,
+  onChangeAttempt,
   streak,
   currentUser,
   isEmailVerified = true,
@@ -95,78 +117,81 @@ export const Navbar: React.FC<NavbarProps> = ({
     setTimeout(() => setTestSent(false), 3000);
   };
 
-  const navLinks: Array<{ id: NavTab; label: string }> = [
-    { id: 'home', label: language === 'en' ? 'Dashboard' : 'डैशबोर्ड' },
-    { id: 'practice', label: language === 'en' ? 'Practice' : 'अभ्यास' },
-    { id: 'mocks', label: language === 'en' ? 'Mocks' : 'मॉक टेस्ट' },
-    { id: 'planner', label: language === 'en' ? 'Syllabus' : 'पाठ्यक्रम' },
-    { id: 'community', label: language === 'en' ? 'Community' : 'कम्युनिटी' },
-  ];
+  const activeTitle = TAB_TITLES[activeTab]?.[language] || 'CA Saathi';
 
   return (
-    <header className="sticky top-0 z-40 bg-white/98 dark:bg-slate-900/98 border-b border-slate-200 dark:border-slate-800 transition-colors duration-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-6">
-        {/* Zone 1: Brand Wordmark Only */}
-        <button
-          type="button"
-          onClick={() => setActiveTab('home')}
-          className="flex items-center gap-2.5 cursor-pointer group select-none shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 rounded-lg"
-        >
-          <span className="w-8 h-8 rounded-lg bg-blue-700 text-white flex items-center justify-center shrink-0">
-            <GraduationCap className="w-5 h-5" />
-          </span>
-          <span className="font-bold text-lg tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
-            CA Saathi
-          </span>
-        </button>
+    <header className="sticky top-0 z-40 bg-white/95 dark:bg-[#0B132B]/95 backdrop-blur-md border-b border-slate-200/90 dark:border-[#1E2B4D] transition-colors duration-200">
+      <div className="max-w-7xl mx-auto px-2.5 sm:px-6 h-16 flex items-center justify-between gap-1.5 sm:gap-3">
+        {/* Zone 1: Mobile Brand Logo OR Desktop Workspace Context */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0 lg:min-w-0">
+          <button
+            type="button"
+            onClick={() => setActiveTab('home')}
+            aria-label="CA Saathi Home"
+            className="lg:hidden flex items-center gap-2 cursor-pointer select-none shrink-0 whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-600 rounded-lg"
+          >
+            <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#0F2152] to-violet-700 text-white flex items-center justify-center shrink-0">
+              <GraduationCap className="w-4 h-4" />
+            </span>
+            <span className="hidden sm:inline font-bold text-base tracking-tight text-[#0F1E46] dark:text-white whitespace-nowrap">
+              CA Saathi
+            </span>
+          </button>
 
-        {/* Zone 2: Clean Single-Line Navigation Links */}
-        <nav aria-label="Primary navigation" className="hidden lg:flex items-center gap-6 text-sm font-medium text-slate-600 dark:text-slate-300">
-          {navLinks.map((link) => {
-            const isActive = activeTab === link.id;
+          <div className="hidden lg:flex items-center gap-2 min-w-0">
+            <span className="text-xs font-medium text-slate-400 dark:text-slate-500">
+              CA Foundation
+            </span>
+            <span className="text-slate-300 dark:text-slate-700">/</span>
+            <span className="text-sm font-bold text-[#0F1E46] dark:text-white truncate">
+              {activeTitle}
+            </span>
+          </div>
+        </div>
+
+        {/* Zone 2: Quick Attempt Switcher (Accessible on all screen sizes) */}
+        <div
+          role="group"
+          aria-label={language === 'en' ? 'Select CA Foundation exam attempt' : 'परीक्षा सत्र चुनें'}
+          className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-[#131E3D] border border-slate-200/90 dark:border-[#24335C] shrink-0"
+        >
+          <Calendar className="w-3.5 h-3.5 text-violet-700 dark:text-violet-400 ml-1.5 hidden sm:block shrink-0" />
+          {SUPPORTED_EXAM_ATTEMPTS.map((attempt) => {
+            const meta = getAttemptMetadata(attempt);
+            const active = selectedAttempt === attempt;
             return (
               <button
-                key={link.id}
+                key={attempt}
                 type="button"
-                onClick={() => setActiveTab(link.id)}
-                className={`py-1.5 border-b-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                  isActive
-                    ? 'border-blue-600 text-blue-700 dark:text-blue-400 font-semibold'
-                    : 'border-transparent hover:text-slate-900 dark:hover:text-white'
+                onClick={() => {
+                  playChimeSound('click');
+                  onChangeAttempt(attempt);
+                }}
+                aria-pressed={active}
+                className={`px-2 sm:px-2.5 py-1 rounded-lg text-[10px] sm:text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  active
+                    ? 'bg-[#172554] dark:bg-violet-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                {link.label}
+                {meta.shortLabel[language]}
               </button>
             );
           })}
-
-          {showAdminLink && (
-            <button
-              type="button"
-              onClick={() => setActiveTab('admin')}
-              className={`py-1.5 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
-                activeTab === 'admin'
-                  ? 'border-indigo-600 text-indigo-700 dark:text-indigo-400 font-semibold'
-                  : 'border-transparent text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300'
-              }`}
-            >
-              <Shield className="w-3.5 h-3.5" />
-              <span>{language === 'en' ? 'Owner Console' : 'ओनर कंसोल'}</span>
-            </button>
-          )}
-        </nav>
+        </div>
 
         {/* Zone 3: Compact Utility Controls & Account Action */}
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
           {/* Language Switcher */}
           <button
             type="button"
             onClick={toggleLanguage}
             aria-label="Toggle language between English and Hindi"
-            className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-medium transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            className="inline-flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-[#24335C] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#142040] text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
-            <Languages className="w-3.5 h-3.5" />
-            <span>{language === 'en' ? 'हिन्दी' : 'ENG'}</span>
+            <Languages className="w-3.5 h-3.5 text-violet-700 dark:text-violet-400 hidden sm:block" />
+            <span className="sm:hidden">{language === 'en' ? 'हिं' : 'EN'}</span>
+            <span className="hidden sm:inline">{language === 'en' ? 'हिन्दी' : 'ENG'}</span>
           </button>
 
           {/* Theme Toggle */}
@@ -177,12 +202,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               onToggleTheme();
             }}
             aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-            className="p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+            className="p-1.5 sm:p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#142040] transition-colors cursor-pointer shrink-0"
           >
             {theme === 'dark' ? (
               <Sun className="w-4 h-4 text-amber-400" />
             ) : (
-              <Moon className="w-4 h-4 text-slate-700" />
+              <Moon className="w-4 h-4 text-[#172554]" />
             )}
           </button>
 
@@ -191,22 +216,22 @@ export const Navbar: React.FC<NavbarProps> = ({
             <button
               type="button"
               onClick={() => setShowNotificationMenu(!showNotificationMenu)}
-              className="relative p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+              className="relative p-1.5 sm:p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#142040] transition-colors cursor-pointer shrink-0"
               aria-label="Notifications and study reminders"
             >
               <Bell className="w-4 h-4" />
               {(unreadNotifications.length > 0 || pendingTasksCount > 0) && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-violet-600 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
                   {unreadNotifications.length > 0 ? unreadNotifications.length : pendingTasksCount}
                 </span>
               )}
             </button>
 
             {showNotificationMenu && (
-              <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl p-4 z-50 text-slate-800 dark:text-slate-200">
+              <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-2xl bg-white dark:bg-[#0F1936] border border-slate-200 dark:border-[#24335C] shadow-xl p-4 z-50 text-slate-800 dark:text-slate-200">
                 <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                  <h4 className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5">
-                    <Bell className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <h4 className="text-xs font-bold text-[#0F1E46] dark:text-white flex items-center gap-1.5">
+                    <Bell className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
                     <span>{language === 'en' ? 'Notifications & Reminders' : 'सूचनाएं एवं रिमाइंडर'}</span>
                   </h4>
                   <span className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
@@ -222,10 +247,10 @@ export const Navbar: React.FC<NavbarProps> = ({
                         return (
                           <div
                             key={n.id}
-                            className={`p-2.5 rounded-lg border text-xs ${
+                            className={`p-2.5 rounded-xl border text-xs ${
                               alreadyRead
-                                ? 'bg-slate-50/60 dark:bg-slate-800/40 border-slate-200/70 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                                : 'bg-blue-50/70 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800 text-slate-800 dark:text-slate-100'
+                                ? 'bg-slate-50/70 dark:bg-slate-900/40 border-slate-200/70 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                                : 'bg-violet-50/70 dark:bg-violet-950/30 border-violet-200 dark:border-violet-800 text-slate-800 dark:text-slate-100'
                             }`}
                           >
                             <div className="flex items-start justify-between gap-2">
@@ -244,7 +269,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                                       markNotificationReadInDb(n.id);
                                     }
                                   }}
-                                  className="text-[11px] text-blue-600 dark:text-blue-400 hover:underline shrink-0 flex items-center gap-0.5 cursor-pointer"
+                                  className="text-[11px] text-violet-700 dark:text-violet-400 hover:underline shrink-0 flex items-center gap-0.5 cursor-pointer"
                                 >
                                   <Check className="w-3 h-3" />
                                   <span>Read</span>
@@ -258,12 +283,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                     </div>
                   )}
 
-                  <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700">
+                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#131E3D] border border-slate-200/80 dark:border-[#24335C]">
                     <div className="flex items-center justify-between text-xs">
                       <span className="font-medium text-slate-700 dark:text-slate-300">
                         {language === 'en' ? "Today's Study Targets" : 'आज के अध्ययन लक्ष्य'}
                       </span>
-                      <span className="font-semibold text-blue-600 dark:text-blue-400 tabular-nums">
+                      <span className="font-semibold text-violet-700 dark:text-violet-400 tabular-nums">
                         {pendingTasksCount} {language === 'en' ? 'Pending' : 'शेष'}
                       </span>
                     </div>
@@ -280,13 +305,13 @@ export const Navbar: React.FC<NavbarProps> = ({
 
                   <div className="flex items-center justify-between text-xs px-1 text-slate-600 dark:text-slate-400">
                     <span className="flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5 text-blue-500" />
+                      <Clock className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
                       <span>{language === 'en' ? 'Daily Alert: 8:00 PM' : 'दैनिक अलर्ट: रात्रि 8:00 बजे'}</span>
                     </span>
                     <button
                       type="button"
                       onClick={handleTestAlert}
-                      className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center gap-1"
+                      className="text-xs font-semibold text-violet-700 dark:text-violet-400 hover:underline cursor-pointer flex items-center gap-1"
                     >
                       <Send className="w-3 h-3" />
                       <span>{testSent ? (language === 'en' ? 'Sent' : 'भेजा गया') : (language === 'en' ? 'Test' : 'परीक्षण')}</span>
@@ -311,7 +336,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       setShowNotificationMenu(false);
                       setActiveTab('progress');
                     }}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-colors cursor-pointer"
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-[#172554] hover:bg-[#1E3A8A] text-white text-xs font-semibold transition-colors cursor-pointer"
                   >
                     <span>{language === 'en' ? 'Study Tracker' : 'स्टडी ट्रैकर'}</span>
                     <ArrowRight className="w-3 h-3" />
@@ -329,7 +354,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 playChimeSound('click');
                 setActiveTab('admin');
               }}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-700 hover:bg-violet-800 text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
               <Shield className="w-3.5 h-3.5" />
               <span>{language === 'en' ? 'Owner Dashboard' : 'ओनर डैशबोर्ड'}</span>
@@ -342,7 +367,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   playChimeSound('click');
                   onOpenPaymentModal();
                 }}
-                className="hidden sm:inline-flex items-center px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                className="hidden sm:inline-flex items-center px-3 py-1.5 rounded-xl bg-violet-700 hover:bg-violet-800 text-white text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
               >
                 {language === 'en' ? '₹5 Pass' : '₹5 पास'}
               </button>
@@ -352,10 +377,10 @@ export const Navbar: React.FC<NavbarProps> = ({
           <button
             type="button"
             onClick={onOpenAuthModal}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-1.5 rounded-xl border border-slate-200 dark:border-[#24335C] bg-white dark:bg-[#131E3D] hover:bg-slate-50 dark:hover:bg-[#1B2952] text-[#0F1E46] dark:text-slate-100 text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
-            <User className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
-            <span className="truncate max-w-[100px]">
+            <User className="w-3.5 h-3.5 text-violet-700 dark:text-violet-400 shrink-0" />
+            <span className="truncate max-w-[78px] sm:max-w-[90px]">
               {isGuest ? (language === 'en' ? 'Sign In' : 'लॉगिन') : currentUser.name.split(' ')[0]}
             </span>
           </button>

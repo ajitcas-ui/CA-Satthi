@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Language, StudyTask, PaperId, RevisionReminder, UserProfile, MCQQuestion } from '../types';
+import { ExamAttemptId, Language, StudyTask, PaperId, RevisionReminder, UserProfile, MCQQuestion } from '../types';
 import { PAPERS } from '../data/papersData';
 import { STUDY_PLAN_TEMPLATES } from '../data/mockPlanner';
 import { CANONICAL_SYLLABUS, getCanonicalChaptersByPaper } from '../data/syllabusData';
 import { auditSyllabusCompleteness } from '../utils/syllabusCompleteness';
+import { getAttemptMetadata } from '../utils/examAttempt';
 import { playChimeSound } from '../utils/audio';
 import {
   getAllQuestions,
@@ -42,6 +43,7 @@ import { ScheduleTaskReminderModal } from './ScheduleTaskReminderModal';
 
 interface StudyPlannerViewProps {
   language: Language;
+  selectedAttempt?: ExamAttemptId;
   tasks: StudyTask[];
   setTasks: React.Dispatch<React.SetStateAction<StudyTask[]>>;
   onStudySessionComplete: (minutes: number) => void;
@@ -55,6 +57,7 @@ interface StudyPlannerViewProps {
 
 export const StudyPlannerView: React.FC<StudyPlannerViewProps> = ({
   language,
+  selectedAttempt = 'January 2027',
   tasks,
   setTasks,
   onStudySessionComplete,
@@ -65,6 +68,7 @@ export const StudyPlannerView: React.FC<StudyPlannerViewProps> = ({
   allQuestions,
   onStartChapterPractice,
 }) => {
+  const attemptMeta = getAttemptMetadata(selectedAttempt);
   const [activeTab, setActiveTab] = useState<'daily' | 'weekly' | 'reminders' | 'tracker' | 'pomodoro' | 'templates'>('daily');
   const [filterPaper, setFilterPaper] = useState<string>('all');
   const [showAddModal, setShowAddModal] = useState(false);
@@ -271,9 +275,11 @@ export const StudyPlannerView: React.FC<StudyPlannerViewProps> = ({
     <div className="space-y-6 pb-20 lg:pb-8">
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Calendar className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            {language === 'en' ? 'CA Foundation Study Planner (Jan 2027)' : 'सीए फाउंडेशन अध्ययन प्लानर (जनवरी 2027)'}
+          <h1 className="text-2xl font-extrabold text-[#0F1E46] dark:text-white flex items-center gap-2 tracking-tight">
+            <Calendar className="w-6 h-6 text-violet-700 dark:text-violet-400" />
+            {language === 'en'
+              ? `CA Foundation Study Planner (${attemptMeta.shortLabel.en})`
+              : `सीए फाउंडेशन अध्ययन प्लानर (${attemptMeta.shortLabel.hi})`}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
             {language === 'en'
@@ -282,7 +288,7 @@ export const StudyPlannerView: React.FC<StudyPlannerViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl overflow-x-auto max-w-full border border-slate-200 dark:border-slate-700">
+        <div className="flex items-center p-1 bg-slate-100 dark:bg-[#0F1936] rounded-xl overflow-x-auto max-w-full border border-slate-200 dark:border-[#213059]">
           {[
             { id: 'daily', labelEn: 'Daily Targets', labelHi: 'दैनिक लक्ष्य' },
             { id: 'weekly', labelEn: 'Weekly Plan', labelHi: 'साप्ताहिक' },
@@ -296,8 +302,8 @@ export const StudyPlannerView: React.FC<StudyPlannerViewProps> = ({
               onClick={() => setActiveTab(tab.id as typeof activeTab)}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 activeTab === tab.id
-                  ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                  ? 'bg-[#172554] text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-[#0F1E46] dark:hover:text-white'
               }`}
             >
               {language === 'en' ? tab.labelEn : tab.labelHi}
@@ -358,7 +364,7 @@ export const StudyPlannerView: React.FC<StudyPlannerViewProps> = ({
 
               <button
                 onClick={() => setShowAddModal(true)}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs cursor-pointer"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-violet-700 hover:bg-violet-800 text-white text-xs font-bold shadow-xs cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span>{language === 'en' ? 'Add Target' : 'लक्ष्य जोड़ें'}</span>
@@ -456,8 +462,10 @@ export const StudyPlannerView: React.FC<StudyPlannerViewProps> = ({
         <div className="space-y-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
             <div>
-              <h3 className="font-bold text-slate-900 dark:text-white text-base">
-                {language === 'en' ? 'Weekly CA Foundation Jan 2027 Schedule' : 'साप्ताहिक सीए फाउंडेशन अध्ययन सारणी'}
+              <h3 className="font-bold text-[#0F1E46] dark:text-white text-base">
+                {language === 'en'
+                  ? `Weekly CA Foundation ${attemptMeta.shortLabel.en} Schedule`
+                  : `साप्ताहिक सीए फाउंडेशन ${attemptMeta.shortLabel.hi} अध्ययन सारणी`}
               </h3>
               <p className="text-xs text-slate-500">
                 {language === 'en'
@@ -465,7 +473,7 @@ export const StudyPlannerView: React.FC<StudyPlannerViewProps> = ({
                   : 'प्रतिदिन 2 विषयों का संतुलित अध्ययन चक्र'}
               </p>
             </div>
-            <span className="px-3 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-xs font-bold border border-blue-200 dark:border-blue-800">
+            <span className="px-3 py-1 rounded-lg bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 text-xs font-bold border border-violet-200 dark:border-violet-800">
               Target: 28–35 hrs/week
             </span>
           </div>
@@ -478,7 +486,7 @@ export const StudyPlannerView: React.FC<StudyPlannerViewProps> = ({
               { day: { en: 'Thursday', hi: 'गुरुवार' }, p1: 'Paper 3: Logical Reasoning & Stats', p2: 'Paper 4: Market Structures', hrs: 5 },
               { day: { en: 'Friday', hi: 'शुक्रवार' }, p1: 'Paper 1: Company Accounts', p2: 'Paper 2: Companies Act 2013', hrs: 5 },
               { day: { en: 'Saturday', hi: 'शनिवार' }, p1: 'Paper 3: Probability & Index Numbers', p2: 'Paper 4: National Income & RBI Policy', hrs: 5 },
-              { day: { en: 'Sunday', hi: 'रविवार' }, p1: 'Full Mock Test (Jan 2027 Pattern)', p2: 'Weekly Error Notebook Revision', hrs: 4 },
+              { day: { en: 'Sunday', hi: 'रविवार' }, p1: `Full Mock Test (${attemptMeta.shortLabel.en} Pattern)`, p2: 'Weekly Error Notebook Revision', hrs: 4 },
             ].map((d, idx) => (
               <div
                 key={idx}
@@ -582,11 +590,11 @@ export const StudyPlannerView: React.FC<StudyPlannerViewProps> = ({
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200/90 dark:border-slate-800 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h3 className="font-bold text-slate-900 dark:text-white text-base flex items-center gap-2">
-                  <BarChart3 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="font-bold text-[#0F1E46] dark:text-white text-base flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-violet-700 dark:text-violet-400" />
                   {language === 'en'
-                    ? 'ICAI January 2027 Complete 46-Chapter Syllabus Tracker'
-                    : 'आईसीएआई जनवरी 2027 संपूर्ण 46-अध्याय पाठ्यक्रम ट्रैकर'}
+                    ? `ICAI ${attemptMeta.fullLabel.en} Complete 46-Chapter Syllabus Tracker`
+                    : `आईसीएआई ${attemptMeta.fullLabel.hi} संपूर्ण 46-अध्याय पाठ्यक्रम ट्रैकर`}
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
@@ -598,7 +606,7 @@ export const StudyPlannerView: React.FC<StudyPlannerViewProps> = ({
               </div>
 
               <div className="text-right tabular-nums">
-                <span className="text-2xl font-black text-blue-700 dark:text-blue-400">{stats.percent}%</span>
+                <span className="text-2xl font-black text-violet-700 dark:text-violet-400">{stats.percent}%</span>
                 <span className="text-xs text-slate-500 block">
                   {stats.mastered} / {stats.total} Mastered • {stats.revising} Revising
                 </span>
@@ -607,7 +615,7 @@ export const StudyPlannerView: React.FC<StudyPlannerViewProps> = ({
 
             <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 rounded-full transition-all duration-500"
+                className="h-full bg-gradient-to-r from-[#172554] to-violet-600 rounded-full transition-all duration-500"
                 style={{ width: `${stats.percent}%` }}
               />
             </div>

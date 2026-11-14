@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Language, MCQQuestion, PaperId, QuestionSourceType, StudentBadge, UserProfile } from '../types';
+import { ExamAttemptId, Language, MCQQuestion, PaperId, QuestionSourceType, StudentBadge, UserProfile } from '../types';
 import { CANONICAL_SYLLABUS, getCanonicalChapterById, getCanonicalChaptersByPaper } from '../data/syllabusData';
+import { SUPPORTED_EXAM_ATTEMPTS, getAttemptMetadata, prioritizeQuestionsForAttempt } from '../utils/examAttempt';
 import { playChimeSound } from '../utils/audio';
 import {
   getAllQuestions,
@@ -49,6 +50,8 @@ import {
 
 interface PracticeViewProps {
   language: Language;
+  selectedAttempt?: ExamAttemptId;
+  onChangeAttempt?: (attempt: ExamAttemptId) => void;
   selectedPaperId?: PaperId | string;
   onQuestionAnswered: (isCorrect: boolean) => void;
   bookmarkedIds: string[];
@@ -61,6 +64,8 @@ interface PracticeViewProps {
 
 export const PracticeView: React.FC<PracticeViewProps> = ({
   language,
+  selectedAttempt = 'January 2027',
+  onChangeAttempt,
   selectedPaperId = 'all',
   onQuestionAnswered,
   bookmarkedIds,
@@ -70,6 +75,7 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
   chapterProgress = {},
   onUpdateChapterProgress,
 }) => {
+  const attemptMeta = getAttemptMetadata(selectedAttempt);
   const [practiceMode, setPracticeMode] = useState<
     'standard' | 'daily' | 'random' | 'pyq' | 'notebook' | 'revision' | 'real_exam'
   >('standard');
@@ -105,9 +111,14 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
     }
   }, [selectedPaperId]);
 
-  const allPoolQuestions = useMemo(
+  const rawPoolQuestions = useMemo(
     () => (allQuestionsOverride && allQuestionsOverride.length > 0 ? allQuestionsOverride : getAllQuestions()),
     [allQuestionsOverride]
+  );
+
+  const allPoolQuestions = useMemo(
+    () => prioritizeQuestionsForAttempt(rawPoolQuestions, selectedAttempt),
+    [rawPoolQuestions, selectedAttempt]
   );
 
   const todayStr = new Date().toISOString().split('T')[0];
@@ -418,21 +429,47 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <HelpCircle className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+          <h1 className="text-2xl font-extrabold text-[#0F1E46] dark:text-slate-100 flex items-center gap-2 tracking-tight">
+            <HelpCircle className="w-6 h-6 text-violet-700 dark:text-violet-400" />
             {language === 'en' ? 'CA Foundation Practice Arena' : 'सीए फाउंडेशन अभ्यास क्षेत्र'}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
             {language === 'en'
-              ? 'All 46 Official ICAI January 2027 Syllabus Chapters • Chapter Practice, Daily Practice, Random MCQs & PYQs'
-              : 'जनवरी 2027 के सभी 46 आईसीएआई अध्याय • अध्याय, दैनिक, रैंडम व विगत वर्ष प्रश्न (PYQs)'}
+              ? `All 46 ICAI Chapters (${attemptMeta.fullLabel.en}) • ${attemptMeta.pyqFocusSummary.en}`
+              : `${attemptMeta.fullLabel.hi} के सभी 46 आईसीएआई अध्याय • ${attemptMeta.pyqFocusSummary.hi}`}
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800 text-xs font-semibold self-start md:self-auto">
-          <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-          <span>{language === 'en' ? 'January 2027 ICAI Syllabus' : 'जनवरी 2027 पाठ्यक्रम'}</span>
-        </div>
+        {onChangeAttempt ? (
+          <div className="inline-flex items-center p-1 rounded-xl bg-white dark:bg-[#0F1936] border border-slate-200 dark:border-[#213059] shadow-xs self-start md:self-auto">
+            {SUPPORTED_EXAM_ATTEMPTS.map((attempt) => {
+              const active = selectedAttempt === attempt;
+              const meta = getAttemptMetadata(attempt);
+              return (
+                <button
+                  key={attempt}
+                  type="button"
+                  onClick={() => {
+                    onChangeAttempt(attempt);
+                    setCurrentIndex(0);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    active
+                      ? 'bg-[#172554] text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#192852]'
+                  }`}
+                >
+                  {meta.shortLabel[language]}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-50 dark:bg-violet-950/60 text-[#172554] dark:text-violet-200 border border-violet-200 dark:border-violet-800 text-xs font-semibold self-start md:self-auto">
+            <ShieldCheck className="w-4 h-4 text-violet-700 dark:text-violet-400" />
+            <span>{attemptMeta.fullLabel[language]} ICAI</span>
+          </div>
+        )}
       </div>
 
       {/* --- 4-SUBJECT SELECTOR TABS --- */}
@@ -558,8 +595,8 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
               }}
               className={`flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                 isActive
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-700 dark:text-slate-300 hover:bg-white/70 dark:hover:bg-slate-900/60'
+                  ? 'bg-gradient-to-r from-[#172554] to-violet-700 text-white shadow-xs'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-white/80 dark:hover:bg-[#192852]'
               }`}
             >
               <Icon className="w-3.5 h-3.5" />
@@ -570,11 +607,11 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
       </div>
 
       {/* --- RANDOM DRAWER & SHUFFLE TOOLBAR --- */}
-      <div className="bg-blue-50/80 dark:bg-blue-950/40 p-3 rounded-2xl border border-blue-200/80 dark:border-blue-900/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div className="bg-violet-50/70 dark:bg-[#0F1936] p-3 rounded-2xl border border-violet-200/80 dark:border-[#213059] flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleDrawRandomQuestion}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-violet-700 hover:bg-violet-800 text-white font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
           >
             <Dice5 className="w-4 h-4" />
             <span>{language === 'en' ? 'Draw Random Unattempted MCQ' : 'अनदेखा प्रश्न निकालें'}</span>
@@ -1092,7 +1129,7 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
                 const isCorrect = currentQuestion.correctIndex === origIdx;
 
                 let optionStyle =
-                  'border-slate-200 dark:border-slate-700 hover:border-blue-300 dark:hover:border-blue-600 hover:bg-blue-50/20 dark:hover:bg-slate-800/50 text-slate-900 dark:text-slate-100';
+                  'border-slate-200 dark:border-[#213059] hover:border-violet-400 dark:hover:border-violet-500 hover:bg-violet-50/30 dark:hover:bg-[#162447] text-[#0F1E46] dark:text-slate-100';
                 if (isSubmitted) {
                   if (isCorrect) {
                     optionStyle =
@@ -1105,7 +1142,7 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
                   }
                 } else if (isChosen) {
                   optionStyle =
-                    'border-blue-600 bg-blue-50/50 dark:bg-blue-950/60 text-blue-900 dark:text-blue-100 ring-1 ring-blue-600 font-semibold';
+                    'border-violet-600 bg-violet-50/70 dark:bg-violet-950/50 text-[#172554] dark:text-violet-100 ring-1 ring-violet-600 font-semibold';
                 }
 
                 const letter = String.fromCharCode(65 + displayIdx);
@@ -1124,7 +1161,7 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
                           : isSubmitted && isChosen && !isCorrect
                             ? 'bg-rose-600 text-white'
                             : isChosen
-                              ? 'bg-blue-600 text-white'
+                              ? 'bg-violet-700 text-white'
                               : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
                       }`}
                     >
@@ -1142,7 +1179,7 @@ export const PracticeView: React.FC<PracticeViewProps> = ({
               <button
                 disabled={currentSelected === undefined}
                 onClick={handleSubmitAnswer}
-                className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 text-white font-bold text-sm shadow-md transition-all cursor-pointer"
+                className="w-full py-3 rounded-xl bg-gradient-to-r from-[#172554] to-violet-700 hover:from-[#1e316e] hover:to-violet-800 disabled:bg-slate-200 disabled:bg-none dark:disabled:bg-slate-800 disabled:text-slate-400 text-white font-bold text-sm shadow-md transition-all cursor-pointer"
               >
                 {language === 'en' ? 'Check Answer & Earn Points' : 'उत्तर जांचें एवं अंक प्राप्त करें'}
               </button>

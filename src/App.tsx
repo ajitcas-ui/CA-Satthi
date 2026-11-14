@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
+  ExamAttemptId,
   Language,
   NavTab,
   PaperId,
@@ -38,8 +39,10 @@ import {
   updateUserProfile,
 } from './utils/storageDb';
 import { canUserAccessAdmin } from './utils/membershipRules';
+import { normalizeExamAttempt } from './utils/examAttempt';
 import { formatIsoDateLocal } from './utils/studyTracker';
 import { resolvePublicDisplayName } from './utils/leaderboard';
+import { Sidebar } from './components/Sidebar';
 import { Navbar } from './components/Navbar';
 import { BottomNav } from './components/BottomNav';
 import { StudyNote } from './types';
@@ -170,6 +173,16 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile>(() => getCurrentUser());
   const [isEmailVerified, setIsEmailVerified] = useState<boolean>(false);
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+
+  const [selectedAttempt, setSelectedAttempt] = useState<ExamAttemptId>(() => {
+    try {
+      const savedAttempt = localStorage.getItem('ca_saathi_selected_attempt');
+      if (savedAttempt) return normalizeExamAttempt(savedAttempt);
+    } catch {
+      // ignore storage access issues
+    }
+    return normalizeExamAttempt(getCurrentUser()?.targetAttempt);
+  });
 
   const [routeKind, setRouteKind] = useState<OwnerRouteKind>(() => readCurrentOwnerRoute());
   const [ownerPreviewingStudent, setOwnerPreviewingStudent] = useState<boolean>(() => {
@@ -315,6 +328,15 @@ export default function App() {
       if (profile) {
         setCurrentUser(profile);
         localStorage.setItem('ca_saathi_current_user', JSON.stringify(profile));
+        try {
+          if (!localStorage.getItem('ca_saathi_selected_attempt') && profile.targetAttempt) {
+            const normalized = normalizeExamAttempt(profile.targetAttempt);
+            setSelectedAttempt(normalized);
+            localStorage.setItem('ca_saathi_selected_attempt', normalized);
+          }
+        } catch {
+          // ignore
+        }
       } else {
         setCurrentUser(GUEST_USER);
         clearCurrentUser();
@@ -569,7 +591,7 @@ export default function App() {
         userId: currentUser.id,
         displayName: resolvePublicDisplayName(currentUser),
         avatar: currentUser.avatar || '🎓',
-        targetAttempt: currentUser.targetAttempt || 'January 2027',
+        targetAttempt: selectedAttempt,
         activePaperId: selectedPaperForPractice,
         activeTopic: activeTab === 'mocks' ? 'Timed Mock Test' : activeTab === 'doubtSolver' ? 'AI Doubt Solver' : 'MCQ Practice',
         isStudying: true,
@@ -691,6 +713,21 @@ export default function App() {
     }
   };
 
+  const handleChangeAttempt = (nextAttempt: ExamAttemptId) => {
+    const normalized = normalizeExamAttempt(nextAttempt);
+    setSelectedAttempt(normalized);
+    try {
+      localStorage.setItem('ca_saathi_selected_attempt', normalized);
+    } catch {
+      // ignore
+    }
+    setCurrentUser((prev) => ({ ...prev, targetAttempt: normalized }));
+    updateUserProfile({ targetAttempt: normalized });
+    if (currentUser?.id && currentUser.id !== 'guest') {
+      updateUserProfileInDb(currentUser.id, { targetAttempt: normalized }).catch(() => {});
+    }
+  };
+
   // Strict Membership Status Resolution (combines live Firestore userPayments + local fallback)
   const resolvedPayments =
     userPayments.length > 0
@@ -705,6 +742,7 @@ export default function App() {
       return (
         <MembershipLockScreen
           language={language}
+          selectedAttempt={selectedAttempt}
           currentUser={currentUser}
           membershipStatus={membership.status}
           expiresAt={membership.expiresAt}
@@ -773,192 +811,241 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white transition-colors duration-200">
-      <NotificationBanner onOpenPlanner={() => setActiveTab('planner')} />
-
-      <Navbar
+    <div className="min-h-screen bg-[#F7F8FC] dark:bg-[#080E21] text-[#0F1E46] dark:text-slate-100 flex font-sans selection:bg-violet-700 selection:text-white transition-colors duration-200">
+      <Sidebar
         language={language}
-        setLanguage={setLanguage}
         activeTab={activeTab}
         setActiveTab={handleTabChange}
-        streak={streak}
-        studiedTodayMinutes={studiedTodayMinutes}
+        selectedAttempt={selectedAttempt}
+        onChangeAttempt={handleChangeAttempt}
         currentUser={currentUser}
         isEmailVerified={isEmailVerified}
-        notifications={notifications}
+        onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
         onOpenAuthModal={() => setIsAuthModalOpen(true)}
-        pendingTasksCount={pendingTasksCount}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        onOpenPricingModal={() => setIsPricingModalOpen(true)}
-        onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
-        onOpenReferralModal={() => setIsReferralModalOpen(true)}
       />
 
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-5">
-        {activeTab === 'home' && (
-          <HomeDashboard
-            language={language}
-            setActiveTab={handleTabChange}
-            setSelectedPaperForPractice={(pId) => setSelectedPaperForPractice(pId)}
-            streak={streak}
-            studiedTodayMinutes={studiedTodayMinutes}
-            dailyGoalMinutes={dailyGoalMinutes}
-            questionsSolvedToday={questionsSolvedToday}
-            dailyQuestionGoal={dailyQuestionGoal}
-            onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
-            onOpenReferralModal={() => setIsReferralModalOpen(true)}
-            currentUser={currentUser}
-            countdownConfig={countdownConfig}
-            testHistory={testHistory}
-            userPayments={resolvedPayments}
-            studySessions={studySessions}
-            chapterProgress={chapterProgress}
-            allQuestions={combinedQuestions}
-            tasks={tasks}
-            livePeersCount={livePeers.length}
-            examUpdates={examUpdates}
-            onOpenAuthModal={() => setIsAuthModalOpen(true)}
-            isSuperAdmin={isSuperAdmin}
-          />
-        )}
+      <div className="flex-1 flex flex-col min-w-0">
+        <NotificationBanner onOpenPlanner={() => setActiveTab('planner')} />
 
-        {activeTab === 'dailyChallenge' &&
-          renderGatedContent(
-            <DailyChallengeView
-              language={language}
-              currentUser={currentUser}
-              streak={streak}
-              onChallengeCompleted={(earnedPts) => {
-                setCurrentUser((prev) => ({
-                  ...prev,
-                  referralPoints: (prev.referralPoints || 0) + earnedPts,
-                }));
-                setStreak((prev) => prev + 1);
-              }}
-            />
-          )}
+        <Navbar
+          language={language}
+          setLanguage={setLanguage}
+          activeTab={activeTab}
+          setActiveTab={handleTabChange}
+          selectedAttempt={selectedAttempt}
+          onChangeAttempt={handleChangeAttempt}
+          streak={streak}
+          studiedTodayMinutes={studiedTodayMinutes}
+          currentUser={currentUser}
+          isEmailVerified={isEmailVerified}
+          notifications={notifications}
+          onOpenAuthModal={() => setIsAuthModalOpen(true)}
+          pendingTasksCount={pendingTasksCount}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onOpenPricingModal={() => setIsPricingModalOpen(true)}
+          onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
+          onOpenReferralModal={() => setIsReferralModalOpen(true)}
+        />
 
-        {activeTab === 'doubtSolver' &&
-          renderGatedContent(<AIDoubtSolverView language={language} currentUser={currentUser} />)}
+        <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-5">
+          <div key={activeTab} className="animate-view-enter">
+            {activeTab === 'home' && (
+              <HomeDashboard
+                language={language}
+                setActiveTab={handleTabChange}
+                setSelectedPaperForPractice={(pId) => setSelectedPaperForPractice(pId)}
+                selectedAttempt={selectedAttempt}
+                onChangeAttempt={handleChangeAttempt}
+                streak={streak}
+                studiedTodayMinutes={studiedTodayMinutes}
+                dailyGoalMinutes={dailyGoalMinutes}
+                questionsSolvedToday={questionsSolvedToday}
+                dailyQuestionGoal={dailyQuestionGoal}
+                onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
+                onOpenReferralModal={() => setIsReferralModalOpen(true)}
+                currentUser={currentUser}
+                countdownConfig={countdownConfig}
+                testHistory={testHistory}
+                userPayments={resolvedPayments}
+                studySessions={studySessions}
+                chapterProgress={chapterProgress}
+                allQuestions={combinedQuestions}
+                studyNotes={combinedStudyNotes}
+                tasks={tasks}
+                livePeersCount={livePeers.length}
+                examUpdates={examUpdates}
+                onOpenAuthModal={() => setIsAuthModalOpen(true)}
+                isSuperAdmin={isSuperAdmin}
+              />
+            )}
 
-        {activeTab === 'leaderboard' &&
-          renderGatedContent(
-            <AllIndiaRankingView
-              language={language}
-              currentUser={currentUser}
-              livePeers={livePeers}
-              studySessions={studySessions}
-              testHistory={testHistory}
-              accuracyRate={accuracyRate}
-              streak={streak}
-              onUpdateDisplayName={(displayName, privacyHideCity, privacyHideAttempt) =>
-                handleUpdateUserProfile({ displayName, privacyHideCity, privacyHideAttempt })
-              }
-            />
-          )}
+            {activeTab === 'dailyChallenge' &&
+              renderGatedContent(
+                <DailyChallengeView
+                  language={language}
+                  currentUser={currentUser}
+                  streak={streak}
+                  onChallengeCompleted={(earnedPts) => {
+                    setCurrentUser((prev) => ({
+                      ...prev,
+                      referralPoints: (prev.referralPoints || 0) + earnedPts,
+                    }));
+                    setStreak((prev) => prev + 1);
+                  }}
+                />
+              )}
 
-        {activeTab === 'planner' &&
-          renderGatedContent(
-            <StudyPlannerView
-              language={language}
-              tasks={tasks}
-              setTasks={setTasks}
-              onStudySessionComplete={handleStudySessionComplete}
-              currentUser={currentUser}
-              streak={streak}
-              chapterProgress={chapterProgress}
-              onUpdateChapterProgress={handleUpdateChapterProgress}
-              allQuestions={combinedQuestions}
-              onStartChapterPractice={(pId) => {
-                setSelectedPaperForPractice(pId);
-                setActiveTab('practice');
-              }}
-            />
-          )}
+            {activeTab === 'doubtSolver' &&
+              renderGatedContent(<AIDoubtSolverView language={language} currentUser={currentUser} />)}
 
-        {activeTab === 'practice' &&
-          renderGatedContent(
-            <PracticeView
-              language={language}
-              selectedPaperId={selectedPaperForPractice}
-              onQuestionAnswered={handleQuestionAnswered}
-              bookmarkedIds={bookmarkedIds}
-              setBookmarkedIds={setBookmarkedIds}
-              currentUser={currentUser}
-              allQuestionsOverride={combinedQuestions}
-              chapterProgress={chapterProgress}
-              onUpdateChapterProgress={handleUpdateChapterProgress}
-            />
-          )}
+            {activeTab === 'leaderboard' &&
+              renderGatedContent(
+                <AllIndiaRankingView
+                  language={language}
+                  currentUser={currentUser}
+                  livePeers={livePeers}
+                  studySessions={studySessions}
+                  testHistory={testHistory}
+                  accuracyRate={accuracyRate}
+                  streak={streak}
+                  onUpdateDisplayName={(displayName, privacyHideCity, privacyHideAttempt) =>
+                    handleUpdateUserProfile({ displayName, privacyHideCity, privacyHideAttempt })
+                  }
+                />
+              )}
 
-        {activeTab === 'mocks' &&
-          renderGatedContent(
-            <MockTestView
-              language={language}
-              onTestCompleted={handleTestCompleted}
-              currentUser={currentUser}
-              onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
-              onOpenReferralModal={() => setIsReferralModalOpen(true)}
-            />
-          )}
+            {activeTab === 'planner' &&
+              renderGatedContent(
+                <StudyPlannerView
+                  language={language}
+                  selectedAttempt={selectedAttempt}
+                  tasks={tasks}
+                  setTasks={setTasks}
+                  onStudySessionComplete={handleStudySessionComplete}
+                  currentUser={currentUser}
+                  streak={streak}
+                  chapterProgress={chapterProgress}
+                  onUpdateChapterProgress={handleUpdateChapterProgress}
+                  allQuestions={combinedQuestions}
+                  onStartChapterPractice={(pId) => {
+                    setSelectedPaperForPractice(pId);
+                    setActiveTab('practice');
+                  }}
+                />
+              )}
 
-        {activeTab === 'community' &&
-          renderGatedContent(
-            <CommunityView language={language} currentUser={currentUser} livePeers={livePeers} />
-          )}
+            {activeTab === 'practice' &&
+              renderGatedContent(
+                <PracticeView
+                  language={language}
+                  selectedAttempt={selectedAttempt}
+                  onChangeAttempt={handleChangeAttempt}
+                  selectedPaperId={selectedPaperForPractice}
+                  onQuestionAnswered={handleQuestionAnswered}
+                  bookmarkedIds={bookmarkedIds}
+                  setBookmarkedIds={setBookmarkedIds}
+                  currentUser={currentUser}
+                  allQuestionsOverride={combinedQuestions}
+                  chapterProgress={chapterProgress}
+                  onUpdateChapterProgress={handleUpdateChapterProgress}
+                />
+              )}
 
-        {activeTab === 'notes' && renderGatedContent(<StudyNotesView language={language} studyNotes={combinedStudyNotes} />)}
+            {activeTab === 'mocks' &&
+              renderGatedContent(
+                <MockTestView
+                  language={language}
+                  selectedAttempt={selectedAttempt}
+                  onChangeAttempt={handleChangeAttempt}
+                  onTestCompleted={handleTestCompleted}
+                  currentUser={currentUser}
+                  onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
+                  onOpenReferralModal={() => setIsReferralModalOpen(true)}
+                />
+              )}
 
-        {activeTab === 'progress' &&
-          renderGatedContent(
-            <ProgressTrackerView
-              language={language}
-              streak={streak}
-              studiedTodayMinutes={studiedTodayMinutes}
-              totalQuestionsSolved={totalQuestionsSolved}
-              accuracyRate={accuracyRate}
-              testHistory={testHistory}
-              studySessions={studySessions}
-              currentUser={currentUser}
-              chapterProgress={chapterProgress}
-              onUpdateDailyGoal={(mins) => handleUpdateUserProfile({ dailyGoalMinutes: mins })}
-            />
-          )}
+            {activeTab === 'community' &&
+              renderGatedContent(
+                <CommunityView
+                  language={language}
+                  selectedAttempt={selectedAttempt}
+                  currentUser={currentUser}
+                  livePeers={livePeers}
+                />
+              )}
 
-        {activeTab === 'updates' && <ExamUpdatesView language={language} examUpdates={examUpdates} />}
+            {activeTab === 'notes' &&
+              renderGatedContent(
+                <StudyNotesView
+                  language={language}
+                  studyNotes={combinedStudyNotes}
+                  selectedAttempt={selectedAttempt}
+                  onChangeAttempt={handleChangeAttempt}
+                />
+              )}
 
-        {activeTab === 'payment' && !isSuperAdmin && (
-          <div className="py-6 max-w-2xl mx-auto">
-            <PaymentModal
-              isOpen={true}
-              onClose={() => setActiveTab('home')}
-              language={language}
-              currentUser={currentUser}
-              userPayments={resolvedPayments}
-              upiConfigOverride={upiConfig}
-              onOpenAuthModal={() => setIsAuthModalOpen(true)}
-              onSuccess={() => {
-                setCurrentUser((prev) => ({
-                  ...prev,
-                  membershipStatus: prev.membershipStatus === 'active' ? 'active' : 'pending',
-                }));
-              }}
-            />
+            {activeTab === 'progress' &&
+              renderGatedContent(
+                <ProgressTrackerView
+                  language={language}
+                  selectedAttempt={selectedAttempt}
+                  streak={streak}
+                  studiedTodayMinutes={studiedTodayMinutes}
+                  totalQuestionsSolved={totalQuestionsSolved}
+                  accuracyRate={accuracyRate}
+                  testHistory={testHistory}
+                  studySessions={studySessions}
+                  currentUser={currentUser}
+                  chapterProgress={chapterProgress}
+                  onUpdateDailyGoal={(mins) => handleUpdateUserProfile({ dailyGoalMinutes: mins })}
+                />
+              )}
+
+            {activeTab === 'updates' && (
+              <ExamUpdatesView
+                language={language}
+                selectedAttempt={selectedAttempt}
+                onChangeAttempt={handleChangeAttempt}
+                examUpdates={examUpdates}
+              />
+            )}
+
+            {activeTab === 'payment' && !isSuperAdmin && (
+              <div className="py-6 max-w-2xl mx-auto">
+                <PaymentModal
+                  isOpen={true}
+                  onClose={() => setActiveTab('home')}
+                  language={language}
+                  currentUser={currentUser}
+                  userPayments={resolvedPayments}
+                  upiConfigOverride={upiConfig}
+                  onOpenAuthModal={() => setIsAuthModalOpen(true)}
+                  onSuccess={() => {
+                    setCurrentUser((prev) => ({
+                      ...prev,
+                      membershipStatus: prev.membershipStatus === 'active' ? 'active' : 'pending',
+                    }));
+                  }}
+                />
+              </div>
+            )}
           </div>
-        )}
-      </main>
+        </main>
 
-      <BottomNav
-        activeTab={activeTab}
-        setActiveTab={handleTabChange}
-        language={language}
-        hasUnreadUpdates={true}
-        currentUser={currentUser}
-        isEmailVerified={isEmailVerified}
-        onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
-        onOpenReferralModal={() => setIsReferralModalOpen(true)}
-      />
+        <BottomNav
+          activeTab={activeTab}
+          setActiveTab={handleTabChange}
+          language={language}
+          selectedAttempt={selectedAttempt}
+          onChangeAttempt={handleChangeAttempt}
+          hasUnreadUpdates={true}
+          currentUser={currentUser}
+          isEmailVerified={isEmailVerified}
+          onOpenPaymentModal={() => setIsPaymentModalOpen(true)}
+          onOpenReferralModal={() => setIsReferralModalOpen(true)}
+        />
+      </div>
 
       <AuthModal
         isOpen={isAuthModalOpen}
@@ -967,11 +1054,16 @@ export default function App() {
         currentUser={currentUser}
         setCurrentUser={(u) => {
           setCurrentUser(u);
+          if (u.targetAttempt) {
+            handleChangeAttempt(normalizeExamAttempt(u.targetAttempt));
+          }
           if (u.email?.toLowerCase().trim() === 'ajitsinghca9@gmail.com' && u.role === 'admin') {
             openOwnerDashboardRoute(true);
           }
         }}
         onOpenOwnerLogin={openOwnerLoginRoute}
+        selectedAttempt={selectedAttempt}
+        onChangeAttempt={handleChangeAttempt}
       />
 
       <PricingModal

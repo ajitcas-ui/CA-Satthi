@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Language, UserProfile } from '../types';
+import { ExamAttemptId, Language, UserProfile } from '../types';
 import {
   registerWithEmail,
   loginWithEmail,
@@ -11,6 +11,7 @@ import {
 } from '../firebase/services';
 import { clearCurrentUser, GUEST_USER, updateUserProfile } from '../utils/storageDb';
 import { playChimeSound } from '../utils/audio';
+import { SUPPORTED_EXAM_ATTEMPTS, getAttemptMetadata, normalizeExamAttempt } from '../utils/examAttempt';
 import {
   Lock,
   LogOut,
@@ -37,6 +38,8 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenOwnerLogin?: () => void;
+  selectedAttempt?: ExamAttemptId;
+  onChangeAttempt?: (attempt: ExamAttemptId) => void;
 }
 
 export const AuthModal: React.FC<AuthModalProps> = ({
@@ -46,6 +49,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   onClose,
   onOpenOwnerLogin,
+  selectedAttempt = 'January 2027',
+  onChangeAttempt,
 }) => {
   const isGuest = !currentUser || currentUser.id === 'guest';
   const [activeTab, setActiveTab] = useState<'profile' | 'login' | 'register' | 'forgot'>(
@@ -64,7 +69,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
-  const [regAttempt, setRegAttempt] = useState('January 2027');
+  const [regAttempt, setRegAttempt] = useState<ExamAttemptId>(() => normalizeExamAttempt(selectedAttempt));
   const [regYear] = useState(2027);
   const [regCity, setRegCity] = useState('');
   const [regPhone, setRegPhone] = useState('');
@@ -76,6 +81,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [forgotError, setForgotError] = useState('');
 
   // Profile & Privacy state
+  const [profileAttempt, setProfileAttempt] = useState<ExamAttemptId>(() =>
+    normalizeExamAttempt(currentUser.targetAttempt || selectedAttempt)
+  );
   const [hideCity, setHideCity] = useState(currentUser.privacyHideCity);
   const [hideAttempt, setHideAttempt] = useState(currentUser.privacyHideAttempt);
   const [profilePhone, setProfilePhone] = useState(currentUser.phone || '');
@@ -85,6 +93,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setActiveTab(currentUser.id === 'guest' ? 'login' : 'profile');
+      setRegAttempt(normalizeExamAttempt(selectedAttempt));
+      setProfileAttempt(normalizeExamAttempt(currentUser.targetAttempt || selectedAttempt));
       setHideCity(currentUser.privacyHideCity);
       setHideAttempt(currentUser.privacyHideAttempt);
       setProfilePhone(currentUser.phone || '');
@@ -93,7 +103,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       setRegError('');
       setForgotError('');
     }
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, selectedAttempt]);
 
   if (!isOpen) return null;
 
@@ -238,6 +248,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (isGuest) return;
     const cleanPhone = profilePhone.replace(/\D/g, '').slice(-10);
     const updates: Partial<UserProfile> = {
+      targetAttempt: profileAttempt,
       privacyHideCity: hideCity,
       privacyHideAttempt: hideAttempt,
       dailyGoalMinutes: Math.max(15, Math.min(720, Number(dailyGoalMinutes) || 120)),
@@ -247,6 +258,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       await updateUserProfileInDb(currentUser.id, updates);
       const merged = updateUserProfile(updates);
       setCurrentUser({ ...currentUser, ...merged, ...updates });
+      if (onChangeAttempt) onChangeAttempt(profileAttempt);
       setPrivacySaved(true);
       playChimeSound('success');
       setTimeout(() => setPrivacySaved(false), 2500);
@@ -284,21 +296,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     </button>
   );
 
+  const activeAttemptLabel = getAttemptMetadata(selectedAttempt).fullLabel[language];
+
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-slate-900 rounded-3xl max-w-lg w-full max-h-[92vh] overflow-y-auto p-6 shadow-2xl border border-slate-200 dark:border-slate-800 relative">
-        {/* Top Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800 mb-4">
+    <div className="fixed inset-0 z-50 bg-[#080F24]/70 backdrop-blur-xs flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-[#0F1936] rounded-3xl max-w-lg w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-200 dark:border-[#24335C] relative">
+        {/* Navy-to-Purple Top Brand Header */}
+        <div className="bg-gradient-to-r from-[#0B1739] via-[#172554] to-[#4C1D95] text-white px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold">
+            <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/20 text-white flex items-center justify-center font-bold">
               <GraduationCap className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base leading-tight">
+              <h3 className="font-bold text-white text-base leading-tight">
                 {language === 'en' ? 'Student Account & Security' : 'विद्यार्थी खाता एवं सुरक्षा'}
               </h3>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">
-                {language === 'en' ? 'Target: CA Foundation January 2027' : 'लक्ष्य: सीए फाउंडेशन जनवरी 2027'}
+              <span className="text-[11px] text-violet-200 font-medium">
+                {language === 'en'
+                  ? `Target: CA Foundation ${activeAttemptLabel}`
+                  : `लक्ष्य: सीए फाउंडेशन ${activeAttemptLabel}`}
               </span>
             </div>
           </div>
@@ -306,21 +322,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <button
             onClick={onClose}
             aria-label="Close modal"
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-white/75 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
+        <div className="p-6">
         {/* Tab Switcher */}
-        <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-5 text-xs font-bold text-slate-600 dark:text-slate-300">
+        <div className="flex items-center p-1 bg-slate-100 dark:bg-[#0B132B] rounded-xl mb-5 text-xs font-bold text-slate-600 dark:text-slate-300 border border-slate-200/80 dark:border-[#24335C]">
           {!isGuest && (
             <button
               onClick={() => setActiveTab('profile')}
               className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
                 activeTab === 'profile'
-                  ? 'bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-400 shadow-xs'
-                  : 'hover:text-slate-900 dark:hover:text-slate-100'
+                  ? 'bg-white dark:bg-violet-700 text-[#0F1E46] dark:text-white shadow-xs'
+                  : 'hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               {language === 'en' ? 'My Profile' : 'प्रोफ़ाइल'}
@@ -330,8 +347,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             onClick={() => setActiveTab('login')}
             className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
               activeTab === 'login'
-                ? 'bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-400 shadow-xs'
-                : 'hover:text-slate-900 dark:hover:text-slate-100'
+                ? 'bg-white dark:bg-violet-700 text-[#0F1E46] dark:text-white shadow-xs'
+                : 'hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             {language === 'en' ? 'Student Login' : 'लॉगिन'}
@@ -340,8 +357,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             onClick={() => setActiveTab('register')}
             className={`flex-1 py-1.5 rounded-lg transition-all cursor-pointer ${
               activeTab === 'register'
-                ? 'bg-white dark:bg-slate-900 text-blue-700 dark:text-blue-400 shadow-xs'
-                : 'hover:text-slate-900 dark:hover:text-slate-100'
+                ? 'bg-white dark:bg-violet-700 text-[#0F1E46] dark:text-white shadow-xs'
+                : 'hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             {language === 'en' ? 'New Registration' : 'नया पंजीकरण'}
@@ -392,11 +409,37 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </div>
             </div>
 
-            <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3 bg-white dark:bg-slate-900">
-              <h5 className="font-bold text-slate-800 dark:text-slate-200 text-xs uppercase tracking-wider flex items-center gap-1.5">
-                <Settings className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                {language === 'en' ? 'Study Goal & Privacy Preferences' : 'अध्ययन लक्ष्य एवं गोपनीयता'}
+            <div className="p-4 rounded-xl border border-slate-200 dark:border-[#24335C] space-y-3 bg-white dark:bg-[#0B132B]">
+              <h5 className="font-bold text-[#0F1E46] dark:text-slate-200 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                <Settings className="w-3.5 h-3.5 text-violet-700 dark:text-violet-400" />
+                {language === 'en' ? 'Target Attempt, Goal & Privacy' : 'लक्षित सत्र, लक्ष्य एवं गोपनीयता'}
               </h5>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                  {language === 'en' ? 'Selected Exam Attempt' : 'लक्षित परीक्षा सत्र'}
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {SUPPORTED_EXAM_ATTEMPTS.map((attempt) => {
+                    const meta = getAttemptMetadata(attempt);
+                    const active = profileAttempt === attempt;
+                    return (
+                      <button
+                        key={attempt}
+                        type="button"
+                        onClick={() => setProfileAttempt(attempt)}
+                        className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                          active
+                            ? 'bg-gradient-to-r from-[#172554] to-violet-700 text-white border-transparent shadow-xs'
+                            : 'bg-slate-50 dark:bg-[#131E3D] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-[#24335C]'
+                        }`}
+                      >
+                        {meta.fullLabel[language]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
@@ -410,7 +453,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     placeholder="10-digit mobile"
                     value={profilePhone}
                     onChange={(e) => setProfilePhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#24335C] bg-white dark:bg-[#131E3D] text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                 </div>
                 <div>
@@ -425,7 +468,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     step={15}
                     value={dailyGoalMinutes}
                     onChange={(e) => setDailyGoalMinutes(Number(e.target.value))}
-                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-slate-100"
+                    className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#24335C] bg-white dark:bg-[#131E3D] text-xs font-mono text-slate-900 dark:text-slate-100"
                   />
                 </div>
               </div>
@@ -436,7 +479,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   type="checkbox"
                   checked={hideCity}
                   onChange={(e) => setHideCity(e.target.checked)}
-                  className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  className="rounded text-violet-600 focus:ring-violet-500 w-4 h-4 cursor-pointer"
                 />
               </label>
 
@@ -446,13 +489,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   type="checkbox"
                   checked={hideAttempt}
                   onChange={(e) => setHideAttempt(e.target.checked)}
-                  className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  className="rounded text-violet-600 focus:ring-violet-500 w-4 h-4 cursor-pointer"
                 />
               </label>
 
               <button
                 onClick={handleSavePrivacy}
-                className="w-full py-2 rounded-lg bg-blue-50 dark:bg-slate-800 hover:bg-blue-100 dark:hover:bg-slate-700 text-blue-700 dark:text-blue-300 font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-1"
+                className="w-full py-2 rounded-lg bg-violet-50 dark:bg-violet-950/60 hover:bg-violet-100 dark:hover:bg-violet-900/60 text-violet-700 dark:text-violet-300 font-bold text-xs transition-colors cursor-pointer flex items-center justify-center gap-1"
               >
                 {privacySaved ? (
                   <>
@@ -550,7 +593,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold text-sm shadow-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#172554] to-violet-700 hover:from-[#1E3A8A] hover:to-violet-800 disabled:opacity-60 text-white font-bold text-sm shadow-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
               >
                 {isLoading ? (
                   <>
@@ -571,7 +614,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveTab('register')}
-                    className="font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                    className="font-bold text-violet-700 dark:text-violet-400 hover:underline cursor-pointer"
                   >
                     {language === 'en' ? 'Register Now' : 'पंजीकरण करें'}
                   </button>
@@ -583,7 +626,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       onClose();
                       onOpenOwnerLogin();
                     }}
-                    className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                    className="text-[11px] font-medium text-violet-700 dark:text-violet-400 hover:underline cursor-pointer"
                   >
                     Owner Login Portal (/owner-login) &rarr;
                   </button>
@@ -673,19 +716,32 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    {language === 'en' ? 'Target Attempt' : 'लक्षित सत्र'}
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                    {language === 'en' ? 'Select Target Exam Attempt' : 'लक्षित परीक्षा सत्र चुनें'}
                   </label>
-                  <select
-                    value={regAttempt}
-                    onChange={(e) => setRegAttempt(e.target.value)}
-                    className="w-full px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium focus:outline-blue-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
-                  >
-                    <option value="January 2027">January 2027</option>
-                    <option value="May 2027">May 2027</option>
-                  </select>
+                  <div className="grid grid-cols-2 gap-2">
+                    {SUPPORTED_EXAM_ATTEMPTS.map((attempt) => {
+                      const meta = getAttemptMetadata(attempt);
+                      const active = regAttempt === attempt;
+                      return (
+                        <button
+                          key={attempt}
+                          type="button"
+                          onClick={() => setRegAttempt(attempt)}
+                          aria-pressed={active}
+                          className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                            active
+                              ? 'bg-gradient-to-r from-[#172554] to-violet-700 text-white border-transparent shadow-xs'
+                              : 'bg-white dark:bg-[#131E3D] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-[#24335C]'
+                          }`}
+                        >
+                          {meta.fullLabel[language]}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div>
@@ -697,7 +753,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     placeholder="e.g. Pune, Jaipur"
                     value={regCity}
                     onChange={(e) => setRegCity(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-blue-500 placeholder-slate-400 dark:placeholder-slate-500"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-[#24335C] bg-white dark:bg-[#131E3D] text-slate-900 dark:text-slate-100 text-sm focus:outline-violet-500 placeholder-slate-400 dark:placeholder-slate-500"
                   />
                 </div>
               </div>
@@ -712,14 +768,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   placeholder="10-digit mobile (used for payment verification)"
                   value={regPhone}
                   onChange={(e) => setRegPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-blue-500 placeholder-slate-400 dark:placeholder-slate-500"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-[#24335C] bg-white dark:bg-[#131E3D] text-slate-900 dark:text-slate-100 text-sm focus:outline-violet-500 placeholder-slate-400 dark:placeholder-slate-500"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={isLoading}
-                className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold text-sm shadow-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-2.5 rounded-xl bg-gradient-to-r from-[#172554] to-violet-700 hover:from-[#1E3A8A] hover:to-violet-800 disabled:opacity-60 text-white font-bold text-sm shadow-sm transition-colors cursor-pointer flex items-center justify-center gap-2"
               >
                 {isLoading ? (
                   <>
@@ -806,6 +862,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </button>
           </form>
         )}
+        </div>
       </div>
     </div>
   );

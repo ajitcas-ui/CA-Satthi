@@ -92,7 +92,7 @@ export const AllIndiaRankingView: React.FC<AllIndiaRankingViewProps> = ({
             </span>
           </div>
 
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-2">
+          <h1 className="text-2xl sm:text-3xl font-black text-[#0F1E46] dark:text-white flex items-center gap-2 tracking-tight">
             <Trophy className="w-7 h-7 text-amber-500" />
             <span>{language === 'en' ? 'CA Foundation Study Leaderboard' : 'सीए फाउंडेशन अध्ययन लीडरबोर्ड'}</span>
           </h1>
@@ -104,13 +104,13 @@ export const AllIndiaRankingView: React.FC<AllIndiaRankingViewProps> = ({
         </div>
 
         {/* Period Switcher Tabs */}
-        <div className="inline-flex p-1 bg-slate-100 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 self-start md:self-auto">
+        <div className="inline-flex p-1 bg-slate-100 dark:bg-[#0F1936] rounded-2xl border border-slate-200 dark:border-[#213059] self-start md:self-auto">
           <button
             onClick={() => setPeriod('weekly')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               period === 'weekly'
-                ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-[#172554] text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-[#0F1E46] dark:hover:text-white'
             }`}
           >
             {language === 'en' ? 'Weekly' : 'साप्ताहिक'}
@@ -119,8 +119,8 @@ export const AllIndiaRankingView: React.FC<AllIndiaRankingViewProps> = ({
             onClick={() => setPeriod('monthly')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               period === 'monthly'
-                ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-[#172554] text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-[#0F1E46] dark:hover:text-white'
             }`}
           >
             {language === 'en' ? 'Monthly' : 'मासिक'}
@@ -129,8 +129,8 @@ export const AllIndiaRankingView: React.FC<AllIndiaRankingViewProps> = ({
             onClick={() => setPeriod('all')}
             className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
               period === 'all'
-                ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-[#172554] text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-[#0F1E46] dark:hover:text-white'
             }`}
           >
             {language === 'en' ? 'All-Time AIR' : 'सर्वकालिक AIR'}
@@ -139,7 +139,7 @@ export const AllIndiaRankingView: React.FC<AllIndiaRankingViewProps> = ({
       </div>
 
       {/* Student's Pinned Standing Card */}
-      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-slate-900 text-white p-5 rounded-3xl shadow-md border border-blue-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-[#0B1739] via-[#17285D] to-[#4C1D95] text-white p-5 rounded-3xl shadow-md border border-violet-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
           <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-md text-2xl flex items-center justify-center shrink-0 border border-white/20">
             {myEntry.avatar}
@@ -231,7 +231,7 @@ export const AllIndiaRankingView: React.FC<AllIndiaRankingViewProps> = ({
 
             <button
               type="submit"
-              className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors shrink-0"
+              className="px-4 py-2 rounded-xl bg-violet-700 hover:bg-violet-800 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors shrink-0"
             >
               {savedNotice ? <Check className="w-3.5 h-3.5" /> : null}
               <span>

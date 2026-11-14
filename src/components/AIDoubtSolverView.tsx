@@ -135,8 +135,8 @@ export const AIDoubtSolverView: React.FC<AIDoubtSolverViewProps> = ({
       {/* View Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 dark:text-white flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-indigo-600 dark:text-indigo-400" />
+          <h1 className="text-2xl font-black text-[#0F1E46] dark:text-white flex items-center gap-2 tracking-tight">
+            <Sparkles className="w-6 h-6 text-violet-700 dark:text-violet-400" />
             <span>{language === 'en' ? 'AI Doubt Solver & Conceptual Mentor' : 'एआई शंका समाधान एवं मेंटर'}</span>
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
@@ -160,7 +160,7 @@ export const AIDoubtSolverView: React.FC<AIDoubtSolverViewProps> = ({
         
         {/* Left Column: Ask Form */}
         <div className="lg:col-span-6 space-y-4">
-          <div className="bg-white dark:bg-slate-900 rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-slate-800 shadow-xs space-y-4">
+          <div className="bg-white dark:bg-[#0F1936] rounded-3xl p-5 sm:p-6 border border-slate-200 dark:border-[#213059] shadow-xs space-y-4">
             
             {/* Subject Selector Tabs */}
             <div>
@@ -175,12 +175,12 @@ export const AIDoubtSolverView: React.FC<AIDoubtSolverViewProps> = ({
                     onClick={() => setSelectedPaper(paper.id)}
                     className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
                       selectedPaper === paper.id
-                        ? 'border-indigo-600 dark:border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/40 ring-1 ring-indigo-600'
-                        : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                        ? 'border-violet-600 dark:border-violet-500 bg-violet-50/70 dark:bg-violet-950/40 ring-1 ring-violet-600'
+                        : 'border-slate-200 dark:border-[#213059] hover:bg-slate-50 dark:hover:bg-[#192852]'
                     }`}
                   >
-                    <span className="text-[10px] font-black text-indigo-700 dark:text-indigo-400 block">{paper.code}</span>
-                    <span className="text-xs font-bold text-slate-900 dark:text-white truncate block">
+                    <span className="text-[10px] font-black text-violet-700 dark:text-violet-400 block">{paper.code}</span>
+                    <span className="text-xs font-bold text-[#0F1E46] dark:text-white truncate block">
                       {paper.name[language].split('(')[0]}
                     </span>
                   </button>
@@ -295,7 +295,7 @@ export const AIDoubtSolverView: React.FC<AIDoubtSolverViewProps> = ({
               <button
                 type="submit"
                 disabled={isSolving}
-                className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-[#172554] to-violet-700 hover:from-[#1e316e] hover:to-violet-800 text-white font-bold text-sm shadow-md transition-all active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-2"
               >
                 {isSolving ? (
                   <>

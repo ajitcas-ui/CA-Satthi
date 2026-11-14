@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Language, StudySession, TestAttemptResult, UserProfile } from '../types';
+import { ExamAttemptId, Language, StudySession, TestAttemptResult, UserProfile } from '../types';
 import { PAPERS } from '../data/papersData';
 import { CANONICAL_SYLLABUS, getCanonicalChaptersByPaper } from '../data/syllabusData';
+import { getAttemptMetadata } from '../utils/examAttempt';
 import { computeDailyGoalSummary, computeStudyStats } from '../utils/studyTracker';
 import { getStudentBadges, getStudentAnalytics, getCurrentUser } from '../utils/storageDb';
 import emptyBooksImg from '../assets/images/empty_study_state_1794574705091.jpg';
@@ -21,6 +22,7 @@ import {
 
 interface ProgressTrackerViewProps {
   language: Language;
+  selectedAttempt?: ExamAttemptId;
   streak: number;
   studiedTodayMinutes: number;
   totalQuestionsSolved: number;
@@ -34,6 +36,7 @@ interface ProgressTrackerViewProps {
 
 export const ProgressTrackerView: React.FC<ProgressTrackerViewProps> = ({
   language,
+  selectedAttempt = 'January 2027',
   streak,
   studiedTodayMinutes,
   totalQuestionsSolved,
@@ -44,6 +47,7 @@ export const ProgressTrackerView: React.FC<ProgressTrackerViewProps> = ({
   chapterProgress = {},
   onUpdateDailyGoal,
 }) => {
+  const attemptMeta = getAttemptMetadata(selectedAttempt);
   const effectiveUser = propUser || getCurrentUser();
   const badges = getStudentBadges(effectiveUser);
   const analytics = getStudentAnalytics(effectiveUser);
@@ -99,14 +103,14 @@ export const ProgressTrackerView: React.FC<ProgressTrackerViewProps> = ({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <TrendingUp className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+          <h1 className="text-2xl font-extrabold text-[#0F1E46] dark:text-slate-100 flex items-center gap-2 tracking-tight">
+            <TrendingUp className="w-6 h-6 text-violet-700 dark:text-violet-400" />
             {language === 'en' ? 'Student Study Tracker & Analytics' : 'छात्र अध्ययन ट्रैकर एवं विश्लेषण'}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
             {language === 'en'
-              ? 'Real tracked study hours, daily goal completion, 46-chapter mastery & question accuracy for January 2027'
-              : 'जनवरी 2027 परीक्षा हेतु वास्तविक अध्ययन घंटे, दैनिक लक्ष्य, 46-अध्याय प्रगति एवं प्रश्न सटीकता'}
+              ? `Real tracked study hours, daily goal completion, 46-chapter mastery & accuracy for ${attemptMeta.fullLabel.en}`
+              : `${attemptMeta.fullLabel.hi} परीक्षा हेतु वास्तविक अध्ययन घंटे, दैनिक लक्ष्य, 46-अध्याय प्रगति एवं प्रश्न सटीकता`}
           </p>
         </div>
 
@@ -119,13 +123,13 @@ export const ProgressTrackerView: React.FC<ProgressTrackerViewProps> = ({
       {/* Top 4 Genuine Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         {/* Card 1: Daily Study Goal */}
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+        <div className="bg-white dark:bg-[#0F1936] rounded-2xl p-4 sm:p-5 border border-slate-200/90 dark:border-[#213059] shadow-xs flex flex-col justify-between">
           <div className="flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-400 mb-2">
             <span>{language === 'en' ? 'Daily Study Target' : 'दैनिक अध्ययन लक्ष्य'}</span>
-            <Target className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <Target className="w-4 h-4 text-violet-700 dark:text-violet-400" />
           </div>
           <div className="flex items-baseline gap-2 mb-2 tabular-nums">
-            <span className="text-3xl font-black text-blue-600 dark:text-blue-400">
+            <span className="text-3xl font-black text-[#172554] dark:text-violet-300">
               {dailyGoalSummary.completedHours}h
             </span>
             <span className="text-xs text-slate-500">
@@ -238,8 +242,8 @@ export const ProgressTrackerView: React.FC<ProgressTrackerViewProps> = ({
                 onClick={() => handleApplyDailyGoal(presetHours)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer tabular-nums ${
                   isSelected
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                    : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-400'
+                    ? 'bg-violet-700 text-white border-violet-700 shadow-xs'
+                    : 'bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-violet-400'
                 }`}
               >
                 {presetHours}h
@@ -256,12 +260,12 @@ export const ProgressTrackerView: React.FC<ProgressTrackerViewProps> = ({
               aria-label={language === 'en' ? 'Custom daily study hours' : 'कस्टम दैनिक अध्ययन घंटे'}
               value={goalDraftHours}
               onChange={(e) => setGoalDraftHours(Number(e.target.value) || 0.5)}
-              className="w-16 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-16 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-900 dark:text-slate-100 tabular-nums focus:outline-none focus:ring-2 focus:ring-violet-500"
             />
             <button
               type="button"
               onClick={() => handleApplyDailyGoal(goalDraftHours)}
-              className="px-3 py-1.5 rounded-xl bg-slate-900 dark:bg-blue-600 hover:bg-slate-800 dark:hover:bg-blue-700 text-white text-xs font-bold cursor-pointer transition-colors"
+              className="px-3 py-1.5 rounded-xl bg-[#172554] dark:bg-violet-700 hover:bg-[#1e316e] dark:hover:bg-violet-800 text-white text-xs font-bold cursor-pointer transition-colors"
             >
               {language === 'en' ? 'Save Goal' : 'लक्ष्य सहेजें'}
             </button>
@@ -271,15 +275,17 @@ export const ProgressTrackerView: React.FC<ProgressTrackerViewProps> = ({
 
       {/* Empty State Banner when brand new student has 0 logged activity */}
       {!hasAnyStudyActivity && (
-        <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center gap-5">
+        <div className="bg-white dark:bg-[#0F1936] rounded-2xl p-5 border border-slate-200 dark:border-[#213059] flex flex-col sm:flex-row items-center gap-5">
           <img
             src={emptyBooksImg}
             alt="Start your CA Foundation study log"
             className="w-full sm:w-44 h-32 object-cover rounded-xl shrink-0"
           />
           <div className="space-y-1.5">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              {language === 'en' ? 'Your January 2027 Study Log Starts Here' : 'आपका जनवरी 2027 अध्ययन रिकॉर्ड यहाँ शुरू होता है'}
+            <h3 className="text-base font-bold text-[#0F1E46] dark:text-white">
+              {language === 'en'
+                ? `Your ${attemptMeta.fullLabel.en} Study Log Starts Here`
+                : `आपका ${attemptMeta.fullLabel.hi} अध्ययन रिकॉर्ड यहाँ शुरू होता है`}
             </h3>
             <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
               {language === 'en'
@@ -377,8 +383,8 @@ export const ProgressTrackerView: React.FC<ProgressTrackerViewProps> = ({
                       item.minutes === 0
                         ? 'bg-slate-200 dark:bg-slate-700'
                         : isToday
-                          ? 'bg-blue-600'
-                          : 'bg-blue-400 group-hover:bg-blue-500'
+                          ? 'bg-violet-700'
+                          : 'bg-violet-400 group-hover:bg-violet-500'
                     }`}
                     style={{ height: `${heightPercent}%` }}
                   />

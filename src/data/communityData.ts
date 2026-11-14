@@ -6,14 +6,14 @@ export const INITIAL_GROUPS: CommunityGroup[] = [
   {
     id: COMMON_GROUP_ID,
     name: {
-      en: 'CA Saathi Jan 2027 Aspirants Community',
-      hi: 'सीए साथी जनवरी 2027 विद्यार्थी समुदाय',
+      en: 'CA Saathi Aspirants Community (Jan & May 2027)',
+      hi: 'सीए साथी विद्यार्थी समुदाय (जनवरी व मई 2027)',
     },
     category: 'general',
-    attemptLabel: 'January 2027',
+    attemptLabel: 'Jan & May 2027',
     description: {
-      en: 'One unified common study & doubt-solving space for all 4 CA Foundation January 2027 papers (Accounting, Business Laws, Quantitative Aptitude & Business Economics).',
-      hi: 'सीए फाउंडेशन जनवरी 2027 के चारों विषयों (लेखांकन, कानून, गणित/सांख्यिकी व अर्थशास्त्र) की संयुक्त शंका समाधान एवं अध्ययन चर्चा।',
+      en: 'One unified common study & doubt-solving space for all 4 CA Foundation papers (Accounting, Business Laws, Quantitative Aptitude & Business Economics) across January 2027 and May 2027 attempts.',
+      hi: 'सीए फाउंडेशन जनवरी 2027 व मई 2027 के चारों विषयों (लेखांकन, कानून, गणित/सांख्यिकी व अर्थशास्त्र) की संयुक्त शंका समाधान एवं अध्ययन चर्चा।',
     },
     iconName: 'Users',
     memberCount: 1,
@@ -40,8 +40,8 @@ export const COMMUNITY_SAFETY_GUIDELINES = [
       hi: 'केवल शैक्षणिक एवं परीक्षा केंद्रित परिचर्चा',
     },
     rule: {
-      en: 'Discussions must remain confined to the CA Foundation January 2027 ICAI syllabus, conceptual doubts, and exam strategy.',
-      hi: 'सभी बातचीत अनिवार्य रूप से सीए फाउंडेशन जनवरी 2027 पाठ्यक्रम, शंका समाधान व अध्ययन रणनीति तक सीमित होनी चाहिए।',
+      en: 'Discussions must remain confined to the CA Foundation (January 2027 & May 2027) ICAI syllabus, conceptual doubts, and exam strategy.',
+      hi: 'सभी बातचीत अनिवार्य रूप से सीए फाउंडेशन (जनवरी व मई 2027) पाठ्यक्रम, शंका समाधान व अध्ययन रणनीति तक सीमित होनी चाहिए।',
     },
   },
   {

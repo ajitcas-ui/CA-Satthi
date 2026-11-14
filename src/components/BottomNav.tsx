@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Language, NavTab, UserProfile } from '../types';
+import { ExamAttemptId, Language, NavTab, UserProfile } from '../types';
 import {
   Home,
   Sparkles,
@@ -17,13 +17,17 @@ import {
   CreditCard,
   Gift,
   BarChart3,
+  Calendar,
 } from 'lucide-react';
 import { canUserAccessAdmin } from '../utils/membershipRules';
+import { SUPPORTED_EXAM_ATTEMPTS, getAttemptMetadata } from '../utils/examAttempt';
 
 interface BottomNavProps {
   activeTab: NavTab;
   setActiveTab: (tab: NavTab) => void;
   language: Language;
+  selectedAttempt: ExamAttemptId;
+  onChangeAttempt: (attempt: ExamAttemptId) => void;
   hasUnreadUpdates?: boolean;
   currentUser?: UserProfile;
   isEmailVerified?: boolean;
@@ -35,6 +39,8 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   activeTab,
   setActiveTab,
   language,
+  selectedAttempt,
+  onChangeAttempt,
   hasUnreadUpdates = true,
   currentUser,
   isEmailVerified = true,
@@ -43,6 +49,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 }) => {
   const [showMoreSheet, setShowMoreSheet] = useState(false);
   const isOwner = canUserAccessAdmin(currentUser, isEmailVerified);
+  const activeAttemptMeta = getAttemptMetadata(selectedAttempt);
 
   const primaryItems = [
     {
@@ -82,14 +89,17 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     },
     {
       id: 'doubtSolver' as NavTab,
-      label: { en: 'AI Doubt Solver', hi: 'एआई शंका समाधान' },
+      label: { en: 'CA Saathi AI', hi: 'सीए साथी AI' },
       description: { en: 'Step-by-step concept solutions', hi: 'चरणबद्ध समाधान' },
       icon: Sparkle,
     },
     {
       id: 'mocks' as NavTab,
       label: { en: 'Mock Tests', hi: 'मॉक टेस्ट' },
-      description: { en: 'Real exam timer & Jan 2027 mocks', hi: 'जनवरी 2027 मॉक परीक्षा' },
+      description: {
+        en: `${activeAttemptMeta.shortLabel.en} exam timer & pattern`,
+        hi: `${activeAttemptMeta.shortLabel.hi} मॉक परीक्षा`,
+      },
       icon: Award,
     },
     {
@@ -101,7 +111,10 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     {
       id: 'notes' as NavTab,
       label: { en: 'Study Notes', hi: 'स्टडी नोट्स' },
-      description: { en: 'Key formulas & mnemonics', hi: 'महत्वपूर्ण सूत्र व संक्षेप' },
+      description: {
+        en: `${activeAttemptMeta.shortLabel.en} notes, formulas & mnemonics`,
+        hi: `${activeAttemptMeta.shortLabel.hi} महत्वपूर्ण सूत्र व संक्षेप`,
+      },
       icon: FileText,
     },
     {
@@ -133,7 +146,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
     <>
       <nav
         aria-label="Mobile navigation"
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 h-14 bg-white/98 dark:bg-slate-900/98 border-t border-slate-200 dark:border-slate-800 px-2 transition-colors duration-200"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 h-14 bg-white/98 dark:bg-[#0B132B]/98 border-t border-slate-200 dark:border-[#1E2B4D] px-2 transition-colors duration-200"
       >
         <div className="flex items-center justify-between max-w-lg mx-auto h-full">
           {primaryItems.map((item) => {
@@ -146,7 +159,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                 onClick={() => handleSelectTab(item.id)}
                 className={`flex flex-col items-center justify-center flex-1 h-full px-1 transition-colors cursor-pointer ${
                   isActive
-                    ? 'text-blue-700 dark:text-blue-400 font-semibold'
+                    ? 'text-violet-700 dark:text-violet-400 font-semibold'
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
                 }`}
               >
@@ -163,7 +176,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             onClick={() => setShowMoreSheet(true)}
             className={`flex flex-col items-center justify-center flex-1 h-full px-1 transition-colors cursor-pointer ${
               isSecondaryActive
-                ? 'text-blue-700 dark:text-blue-400 font-semibold'
+                ? 'text-violet-700 dark:text-violet-400 font-semibold'
                 : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-medium'
             }`}
           >
@@ -179,14 +192,14 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end">
           <div
             onClick={() => setShowMoreSheet(false)}
-            className="fixed inset-0 bg-slate-900/65 transition-opacity"
+            className="fixed inset-0 bg-[#080F24]/70 transition-opacity"
           />
 
-          <div className="relative z-10 bg-white dark:bg-slate-900 rounded-t-3xl border-t border-slate-200 dark:border-slate-800 p-5 shadow-2xl max-h-[85vh] overflow-y-auto">
+          <div className="relative z-10 bg-white dark:bg-[#0F1936] rounded-t-3xl border-t border-slate-200 dark:border-[#24335C] p-5 shadow-2xl max-h-[85vh] overflow-y-auto">
             <div className="w-12 h-1.5 rounded-full bg-slate-200 dark:bg-slate-700 mx-auto mb-4" />
 
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              <h3 className="text-sm font-bold text-[#0F1E46] dark:text-white">
                 {language === 'en' ? 'All Learning Modules' : 'सभी अध्ययन मॉड्यूल'}
               </h3>
               <button
@@ -199,19 +212,47 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               </button>
             </div>
 
+            {/* Mobile Exam Attempt Switcher */}
+            <div className="my-3 p-3 rounded-2xl bg-slate-50 dark:bg-[#131E3D] border border-slate-200 dark:border-[#24335C] space-y-2">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-indigo-200 flex items-center gap-1.5">
+                <Calendar className="w-3.5 h-3.5 text-violet-700 dark:text-violet-400" />
+                <span>{language === 'en' ? 'Select Target Exam Attempt' : 'लक्षित परीक्षा सत्र चुनें'}</span>
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {SUPPORTED_EXAM_ATTEMPTS.map((attempt) => {
+                  const meta = getAttemptMetadata(attempt);
+                  const active = selectedAttempt === attempt;
+                  return (
+                    <button
+                      key={attempt}
+                      type="button"
+                      onClick={() => onChangeAttempt(attempt)}
+                      className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                        active
+                          ? 'bg-[#172554] dark:bg-violet-600 text-white border-transparent shadow-xs'
+                          : 'bg-white dark:bg-[#0B132B] text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                      }`}
+                    >
+                      {meta.fullLabel[language]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="grid grid-cols-2 gap-2.5 my-3">
               {isOwner ? (
                 <button
                   type="button"
                   onClick={() => handleSelectTab('admin')}
-                  className="flex items-center gap-2 p-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-left cursor-pointer"
+                  className="flex items-center gap-2 p-2.5 rounded-xl bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800 text-left cursor-pointer"
                 >
-                  <Shield className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  <Shield className="w-4 h-4 text-violet-700 dark:text-violet-400 shrink-0" />
                   <div>
-                    <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 block">
+                    <span className="text-xs font-bold text-[#0F1E46] dark:text-violet-200 block">
                       {language === 'en' ? 'Owner Console' : 'ओनर कंसोल'}
                     </span>
-                    <span className="text-[11px] text-indigo-600 dark:text-indigo-400">
+                    <span className="text-[11px] text-violet-700 dark:text-violet-400">
                       {language === 'en' ? 'Free Unlimited' : 'निःशुल्क प्रवेश'}
                     </span>
                   </div>
@@ -272,21 +313,21 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                     onClick={() => handleSelectTab(item.id)}
                     className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-colors cursor-pointer ${
                       isActive
-                        ? 'bg-blue-50 dark:bg-blue-950/60 border-blue-300 dark:border-blue-700'
-                        : 'bg-slate-50/70 dark:bg-slate-800/40 border-slate-200/80 dark:border-slate-700/60 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        ? 'bg-violet-50 dark:bg-violet-950/50 border-violet-300 dark:border-violet-700'
+                        : 'bg-slate-50/70 dark:bg-[#131E3D]/70 border-slate-200/80 dark:border-[#24335C] hover:bg-slate-100 dark:hover:bg-[#1B2952]'
                     }`}
                   >
                     <div
                       className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
                         isActive
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 border border-slate-200 dark:border-slate-600'
+                          ? 'bg-violet-700 text-white'
+                          : 'bg-white dark:bg-[#0B132B] text-violet-700 dark:text-violet-300 border border-slate-200 dark:border-[#24335C]'
                       }`}
                     >
                       <Icon className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <span className="text-xs font-bold text-slate-900 dark:text-white truncate block">
+                      <span className="text-xs font-bold text-[#0F1E46] dark:text-white truncate block">
                         {item.label[language]}
                       </span>
                       <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">

@@ -11,10 +11,14 @@ import {
   MCQQuestion,
   StudyTask,
   ExamUpdate,
+  ExamAttemptId,
+  StudyNote,
 } from '../types';
 import { PAPERS } from '../data/papersData';
 import { CANONICAL_SYLLABUS } from '../data/syllabusData';
 import { MOCK_EXAM_UPDATES } from '../data/mockUpdates';
+import { MOCK_TESTS } from '../data/mockTests';
+import { MOCK_NOTES } from '../data/mockNotes';
 import { INITIAL_STUDY_TASKS } from '../data/mockPlanner';
 import {
   getAllQuestions,
@@ -24,6 +28,14 @@ import {
 } from '../utils/storageDb';
 import { computeDailyGoalSummary, computeStudyStats } from '../utils/studyTracker';
 import { auditSyllabusCompleteness } from '../utils/syllabusCompleteness';
+import {
+  SUPPORTED_EXAM_ATTEMPTS,
+  getAttemptMetadata,
+  resolveCountdownForAttempt,
+  filterMockTestsForAttempt,
+  filterNotesForAttempt,
+  filterUpdatesForAttempt,
+} from '../utils/examAttempt';
 import {
   Flame,
   Clock,
@@ -61,6 +73,8 @@ interface HomeDashboardProps {
   language: Language;
   setActiveTab: (tab: NavTab) => void;
   setSelectedPaperForPractice?: (paperId: PaperId) => void;
+  selectedAttempt: ExamAttemptId;
+  onChangeAttempt: (attempt: ExamAttemptId) => void;
   streak: number;
   studiedTodayMinutes: number;
   dailyGoalMinutes: number;
@@ -75,6 +89,7 @@ interface HomeDashboardProps {
   studySessions?: StudySession[];
   chapterProgress?: Record<string, 'pending' | 'revising' | 'mastered'>;
   allQuestions?: MCQQuestion[];
+  studyNotes?: StudyNote[];
   tasks?: StudyTask[];
   livePeersCount?: number;
   onOpenAuthModal?: () => void;
@@ -86,6 +101,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   language,
   setActiveTab,
   setSelectedPaperForPractice,
+  selectedAttempt,
+  onChangeAttempt,
   streak,
   studiedTodayMinutes,
   dailyGoalMinutes,
@@ -100,6 +117,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   studySessions = [],
   chapterProgress = {},
   allQuestions,
+  studyNotes,
   tasks = INITIAL_STUDY_TASKS,
   livePeersCount = 0,
   onOpenAuthModal,
@@ -110,7 +128,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [checklistPaperFilter, setChecklistPaperFilter] = useState<'all' | PaperId>('all');
 
   const isGuest = !currentUser || currentUser.id === 'guest';
-  const resolvedCountdown = countdownConfig || getExamCountdownConfig();
+  const baseCountdown = countdownConfig || getExamCountdownConfig();
+  const resolvedCountdown = useMemo(
+    () => resolveCountdownForAttempt(selectedAttempt, baseCountdown),
+    [selectedAttempt, baseCountdown]
+  );
+  const attemptMeta = useMemo(() => getAttemptMetadata(selectedAttempt), [selectedAttempt]);
+
   const paymentHistory = useMemo(
     () => (userPayments !== undefined ? userPayments : currentUser && !isGuest ? getUserPaymentHistory(currentUser.id) : []),
     [userPayments, currentUser, isGuest]
@@ -184,38 +208,83 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     setActiveTab('practice');
   };
 
-  const latestUpdate = examUpdates && examUpdates.length > 0 ? examUpdates[0] : MOCK_EXAM_UPDATES[0];
+  const attemptUpdates = useMemo(
+    () => filterUpdatesForAttempt(examUpdates && examUpdates.length > 0 ? examUpdates : MOCK_EXAM_UPDATES, selectedAttempt),
+    [examUpdates, selectedAttempt]
+  );
+  const attemptMocks = useMemo(
+    () => filterMockTestsForAttempt(MOCK_TESTS, selectedAttempt, false).slice(0, 2),
+    [selectedAttempt]
+  );
+  const attemptNotes = useMemo(
+    () => filterNotesForAttempt(studyNotes && studyNotes.length > 0 ? studyNotes : MOCK_NOTES, selectedAttempt, false).slice(0, 2),
+    [studyNotes, selectedAttempt]
+  );
+
+  const latestUpdate = attemptUpdates[0] || (examUpdates && examUpdates.length > 0 ? examUpdates[0] : MOCK_EXAM_UPDATES[0]);
   const pendingTasks = tasks.filter((t) => !t.completed).slice(0, 3);
   const filteredAuditChapters =
     checklistPaperFilter === 'all'
       ? syllabusAudit.chapters
       : syllabusAudit.chapters.filter((c) => c.paperId === checklistPaperFilter);
 
+  const overallMasteredCount = useMemo(
+    () => CANONICAL_SYLLABUS.filter((c) => chapterProgress[c.id] === 'mastered').length,
+    [chapterProgress]
+  );
+
   return (
     <div className="space-y-6 pb-20 lg:pb-10">
-      {/* 1. Hero Split Section with Desk Study Photography & January 2027 Focus */}
-      <section className="rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs">
+      {/* 1. Hero Split Section with Desk Study Photography & Exam Attempt Switcher */}
+      <section className="rounded-2xl overflow-hidden bg-white dark:bg-[#0F1936] border border-slate-200/90 dark:border-[#213059] shadow-sm">
         <div className="grid grid-cols-1 lg:grid-cols-12 items-stretch">
           <div className="lg:col-span-7 p-6 sm:p-8 flex flex-col justify-between space-y-5">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-blue-700 dark:text-blue-400">
-                <span>CA Foundation {resolvedCountdown.targetAttempt || 'January 2027'}</span>
+            <div className="space-y-3.5">
+              {/* Interactive Exam Attempt Switcher */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5">
+                <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-[#0B132B] border border-slate-200 dark:border-[#24335C]">
+                  {SUPPORTED_EXAM_ATTEMPTS.map((attempt) => {
+                    const meta = getAttemptMetadata(attempt);
+                    const isSelected = selectedAttempt === attempt;
+                    return (
+                      <button
+                        key={attempt}
+                        type="button"
+                        onClick={() => onChangeAttempt(attempt)}
+                        aria-pressed={isSelected}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                          isSelected
+                            ? 'bg-gradient-to-r from-[#172554] to-violet-700 text-white shadow-xs'
+                            : 'text-slate-600 dark:text-slate-300 hover:text-[#0F1E46] dark:hover:text-white'
+                        }`}
+                      >
+                        {meta.fullLabel[language]}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <span className="px-2.5 py-1 rounded-lg bg-violet-50 dark:bg-violet-950/60 border border-violet-200/80 dark:border-violet-800 text-[11px] font-bold text-violet-700 dark:text-violet-300">
+                  {attemptMeta.studyPhaseBadge[language]}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-violet-700 dark:text-violet-300">
+                <span>CA Foundation {attemptMeta.fullLabel[language]}</span>
                 <span aria-hidden="true">·</span>
                 <span>46 ICAI Chapters</span>
                 <span aria-hidden="true">·</span>
                 <span>Bilingual Hindi &amp; English</span>
               </div>
 
-              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-tight [text-wrap:balance]">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#0F1E46] dark:text-white leading-tight [text-wrap:balance]">
                 {language === 'en'
-                  ? `Focused Preparation for CA Foundation ${resolvedCountdown.targetAttempt || 'January 2027'}`
-                  : `सीए फाउंडेशन ${resolvedCountdown.targetAttempt || 'जनवरी 2027'} हेतु व्यवस्थित एवं सटीक तैयारी`}
+                  ? `Structured Prep for CA Foundation ${attemptMeta.fullLabel.en}`
+                  : `सीए फाउंडेशन ${attemptMeta.fullLabel.hi} हेतु व्यवस्थित एवं सटीक तैयारी`}
               </h1>
 
               <p className="text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed max-w-xl">
-                {language === 'en'
-                  ? 'Master Accounting, Business Laws, Quantitative Aptitude, and Business Economics with complete chapter coverage, verified PYQs, daily study tracking, and ₹5/month membership.'
-                  : 'लेखांकन, व्यावसायिक कानून, मात्रात्मक योग्यता और व्यावसायिक अर्थशास्त्र के सभी 46 अध्यायों, PYQs व दैनिक अध्ययन ट्रैकर के साथ अपनी तैयारी को मजबूत बनाएं।'}
+                {attemptMeta.syllabusNote[language]}
               </p>
             </div>
 
@@ -223,7 +292,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setActiveTab('practice')}
-                className="px-3.5 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-semibold text-xs sm:text-sm transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                className="px-4 py-2.5 rounded-xl bg-violet-700 hover:bg-violet-800 text-white font-semibold text-xs sm:text-sm transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap shadow-xs"
               >
                 <BookOpen className="w-4 h-4 shrink-0" />
                 <span>{language === 'en' ? 'Start Chapter Practice' : 'अध्याय अभ्यास शुरू करें'}</span>
@@ -233,16 +302,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <button
                   type="button"
                   onClick={onOpenAuthModal}
-                  className="px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-semibold text-xs sm:text-sm transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                  className="px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-[#24335C] bg-white dark:bg-[#131E3D] hover:bg-slate-50 dark:hover:bg-[#1B2952] text-[#0F1E46] dark:text-slate-100 font-semibold text-xs sm:text-sm transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
                 >
-                  <UserCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <UserCheck className="w-4 h-4 text-violet-700 dark:text-violet-400 shrink-0" />
                   <span>{language === 'en' ? 'Sign In with Google' : 'Google से साइन इन करें'}</span>
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => setActiveTab('dailyChallenge')}
-                  className="px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 font-semibold text-xs sm:text-sm transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                  className="px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-[#24335C] bg-white dark:bg-[#131E3D] hover:bg-slate-50 dark:hover:bg-[#1B2952] text-[#0F1E46] dark:text-slate-100 font-semibold text-xs sm:text-sm transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
                 >
                   <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
                   <span>{language === 'en' ? 'Daily 10 Quiz' : 'दैनिक 10 प्रश्न'}</span>
@@ -252,7 +321,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               <button
                 type="button"
                 onClick={() => setShowSyllabusChecklist(true)}
-                className="px-3 py-2.5 rounded-xl text-blue-700 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/40 font-semibold text-xs sm:text-sm transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
+                className="px-3 py-2.5 rounded-xl text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/40 font-semibold text-xs sm:text-sm transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap"
               >
                 <ListChecks className="w-4 h-4 shrink-0" />
                 <span>{language === 'en' ? '46-Chapter Checklist' : '46-अध्याय सूची'}</span>
@@ -260,20 +329,20 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </div>
           </div>
 
-          <div className="lg:col-span-5 relative min-h-[210px] lg:min-h-full bg-slate-100 dark:bg-slate-800">
+          <div className="lg:col-span-5 relative min-h-[220px] lg:min-h-full bg-[#0B1739]">
             <img
               src={heroStudyImg}
               alt="CA Foundation study desk with accounting ledger and calculator"
               referrerPolicy="no-referrer"
               className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-slate-950/25 to-transparent flex flex-col justify-end p-5">
-              <p className="text-xs font-medium text-blue-200">
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0B1739]/90 via-[#172554]/35 to-transparent flex flex-col justify-end p-5">
+              <p className="text-xs font-medium text-violet-200">
                 {isGuest
                   ? language === 'en'
-                    ? 'Guest Preview · Sign in to save progress'
-                    : 'अतिथि मोड · प्रगति सहेजने हेतु लॉगिन करें'
-                  : `${currentUser.name} · ${currentUser.targetAttempt}`}
+                    ? `Guest Preview · ${attemptMeta.shortLabel.en} Mode`
+                    : `अतिथि मोड · ${attemptMeta.shortLabel.hi}`
+                  : `${currentUser.name} · ${attemptMeta.fullLabel[language]}`}
               </p>
               <p className="text-sm font-bold text-white mt-0.5 tabular-nums">
                 {isSuperAdmin
@@ -309,10 +378,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
         {/* Clean Membership Status OR Owner Console Card */}
         {isSuperAdmin ? (
-          <section className="lg:col-span-5 bg-white dark:bg-slate-900 rounded-2xl p-5 border border-indigo-200 dark:border-indigo-800/80 shadow-xs flex flex-col justify-between gap-4">
+          <section className="lg:col-span-5 bg-white dark:bg-[#0F1936] rounded-2xl p-5 border border-violet-200 dark:border-violet-800/80 shadow-xs flex flex-col justify-between gap-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 text-xs">
-                <span className="font-semibold text-indigo-700 dark:text-indigo-400 flex items-center gap-1.5">
+                <span className="font-semibold text-violet-700 dark:text-violet-400 flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4" />
                   <span>{language === 'en' ? 'Owner Access · Active Free' : 'ओनर एक्सेस · पूर्णतः निःशुल्क'}</span>
                 </span>
@@ -320,7 +389,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   {currentUser?.email}
                 </span>
               </div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              <h3 className="text-base font-bold text-[#0F1E46] dark:text-white">
                 {language === 'en' ? 'Private Owner Control Panel' : 'निजी ओनर नियंत्रण पैनल'}
               </h3>
               <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
@@ -330,11 +399,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-[#213059]">
               <button
                 type="button"
                 onClick={() => setActiveTab('admin')}
-                className="flex-1 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap"
+                className="flex-1 px-3.5 py-2 rounded-xl bg-violet-700 hover:bg-violet-800 text-white text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap"
               >
                 <ShieldCheck className="w-3.5 h-3.5" />
                 <span>{language === 'en' ? 'Open Owner Dashboard' : 'ओनर डैशबोर्ड खोलें'}</span>
@@ -343,7 +412,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <button
                   type="button"
                   onClick={onOpenAuthModal}
-                  className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                  className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-[#24335C] hover:bg-slate-50 dark:hover:bg-[#131E3D] text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
                 >
                   {language === 'en' ? 'Account' : 'खाता'}
                 </button>
@@ -351,7 +420,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </div>
           </section>
         ) : (
-          <section className="lg:col-span-5 bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-4">
+          <section className="lg:col-span-5 bg-white dark:bg-[#0F1936] rounded-2xl p-5 border border-slate-200/90 dark:border-[#213059] shadow-xs flex flex-col justify-between gap-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 text-xs">
                 <span className="font-semibold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
@@ -362,7 +431,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   ) : latestPayment?.status === 'rejected' ? (
                     <XCircle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
                   ) : (
-                    <CreditCard className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <CreditCard className="w-4 h-4 text-violet-700 dark:text-violet-400" />
                   )}
                   <span>
                     {hasActivePass
@@ -393,7 +462,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 )}
               </div>
 
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
+              <h3 className="text-base font-bold text-[#0F1E46] dark:text-white">
                 {hasActivePass
                   ? language === 'en'
                     ? `Pro Access Active (${membership.daysRemaining}d remaining)`
@@ -410,7 +479,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                 {hasActivePass
                   ? language === 'en'
-                    ? 'All 46 chapters, timed mock tests, PYQs, AI Doubt Solver, and Common Study Group are unlocked.'
+                    ? 'All 46 chapters, timed mock tests, PYQs, CA Saathi AI, and Common Study Group are unlocked.'
                     : 'सभी 46 अध्याय, मॉक टेस्ट, PYQs, एआई सॉल्वर व कम्युनिटी अनलॉक हैं।'
                   : latestPayment?.status === 'pending' || membership.status === 'pending'
                     ? language === 'en'
@@ -424,12 +493,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-[#213059]">
               {onOpenPaymentModal && (
                 <button
                   type="button"
                   onClick={onOpenPaymentModal}
-                  className="flex-1 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap"
+                  className="flex-1 px-3.5 py-2 rounded-xl bg-violet-700 hover:bg-violet-800 text-white text-xs font-semibold transition-colors cursor-pointer flex items-center justify-center gap-1.5 whitespace-nowrap"
                 >
                   <CreditCard className="w-3.5 h-3.5" />
                   <span>
@@ -451,7 +520,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <button
                   type="button"
                   onClick={onOpenAuthModal}
-                  className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                  className="px-3.5 py-2 rounded-xl border border-slate-200 dark:border-[#24335C] hover:bg-slate-50 dark:hover:bg-[#131E3D] text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap"
                 >
                   {isGuest ? (language === 'en' ? 'Sign In' : 'साइन इन') : (language === 'en' ? 'Account' : 'खाता')}
                 </button>
@@ -463,23 +532,23 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
       {/* 3. Study Tracker Metrics + Goal & Motivation Split */}
       <section className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-        <div className="lg:col-span-8 bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between gap-4">
+        <div className="lg:col-span-8 bg-white dark:bg-[#0F1936] rounded-2xl p-5 border border-slate-200/90 dark:border-[#213059] shadow-xs flex flex-col justify-between gap-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <h2 className="text-base font-bold text-[#0F1E46] dark:text-white flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-violet-700 dark:text-violet-400" />
                 <span>{language === 'en' ? 'Your Study Tracker' : 'आपका अध्ययन ट्रैकर'}</span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {language === 'en'
-                  ? 'Active study time is tracked automatically while practicing chapters, notes, and mocks.'
+                  ? `Active study time is tracked automatically while practicing ${attemptMeta.shortLabel.en} modules.`
                   : 'अभ्यास, नोट्स व मॉक टेस्ट के दौरान आपका अध्ययन समय स्वतः रिकॉर्ड होता है।'}
               </p>
             </div>
             <button
               type="button"
               onClick={() => setActiveTab('progress')}
-              className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              className="text-xs font-semibold text-violet-700 dark:text-violet-400 hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap"
             >
               <span>{language === 'en' ? 'Full Analytics' : 'पूरा विवरण'}</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -487,16 +556,19 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800">
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#131E3D] border border-slate-200/70 dark:border-[#24335C]">
               <span className="text-xs text-slate-500 dark:text-slate-400 block">
                 {language === 'en' ? 'Today / Goal' : 'आज / लक्ष्य'}
               </span>
-              <span className="text-xl font-bold text-slate-900 dark:text-white tabular-nums mt-1 block">
+              <span className="text-xl font-bold text-[#0F1E46] dark:text-white tabular-nums mt-1 block">
                 {dailyGoalSummary.completedHours}h{' '}
                 <span className="text-xs font-normal text-slate-500 dark:text-slate-400">/ {dailyGoalSummary.goalHours}h</span>
               </span>
-              <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 mt-2 overflow-hidden">
-                <div className="bg-blue-600 h-1.5 rounded-full transition-all" style={{ width: `${studyProgress}%` }} />
+              <div className="w-full bg-slate-200 dark:bg-[#24335C] rounded-full h-1.5 mt-2 overflow-hidden">
+                <div
+                  className="bg-gradient-to-r from-[#172554] to-violet-600 h-1.5 rounded-full transition-all"
+                  style={{ width: `${studyProgress}%` }}
+                />
               </div>
               <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums mt-1 block">
                 {dailyGoalSummary.isGoalMet
@@ -509,11 +581,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </span>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800">
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#131E3D] border border-slate-200/70 dark:border-[#24335C]">
               <span className="text-xs text-slate-500 dark:text-slate-400 block">
                 {language === 'en' ? 'Total Study' : 'कुल अध्ययन'}
               </span>
-              <span className="text-xl font-bold text-slate-900 dark:text-white tabular-nums mt-1 block">
+              <span className="text-xl font-bold text-[#0F1E46] dark:text-white tabular-nums mt-1 block">
                 {studyStats.totalHours} hrs
               </span>
               <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums mt-1 block">
@@ -521,11 +593,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </span>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800">
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#131E3D] border border-slate-200/70 dark:border-[#24335C]">
               <span className="text-xs text-slate-500 dark:text-slate-400 block">
                 {language === 'en' ? 'MCQs Attempted' : 'हल प्रश्न'}
               </span>
-              <span className="text-xl font-bold text-slate-900 dark:text-white tabular-nums mt-1 block">
+              <span className="text-xl font-bold text-[#0F1E46] dark:text-white tabular-nums mt-1 block">
                 {Math.max(studyStats.totalQuestionsAttempted, questionsSolvedToday)}
               </span>
               <span className="text-[11px] text-emerald-600 dark:text-emerald-400 tabular-nums mt-1 block font-medium">
@@ -533,11 +605,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </span>
             </div>
 
-            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/70 dark:border-slate-800">
+            <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#131E3D] border border-slate-200/70 dark:border-[#24335C]">
               <span className="text-xs text-slate-500 dark:text-slate-400 block">
                 {language === 'en' ? 'Study Streak' : 'अध्ययन स्ट्रीक'}
               </span>
-              <span className="text-xl font-bold text-slate-900 dark:text-white tabular-nums mt-1 flex items-center gap-1.5">
+              <span className="text-xl font-bold text-[#0F1E46] dark:text-white tabular-nums mt-1 flex items-center gap-1.5">
                 <Flame className="w-4 h-4 text-amber-500" />
                 <span>{Math.max(studyStats.streakDays, streak)}d</span>
               </span>
@@ -549,8 +621,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         </div>
 
         {/* Motivation & Journal Card */}
-        <div className="lg:col-span-4 rounded-2xl overflow-hidden bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col">
-          <div className="h-36 w-full relative overflow-hidden bg-slate-100 dark:bg-slate-800">
+        <div className="lg:col-span-4 rounded-2xl overflow-hidden bg-white dark:bg-[#0F1936] border border-slate-200/90 dark:border-[#213059] shadow-xs flex flex-col">
+          <div className="h-36 w-full relative overflow-hidden bg-[#0B1739]">
             <img
               src={goalStudyImg}
               alt="CA Foundation revision notebook and pen"
@@ -564,14 +636,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 ? '"Chartered Accountancy rewards daily discipline over last-minute cramming. Finish one chapter a day cleanly."'
                 : '"सीए परीक्षा अंतिम दिन की रटंत नहीं, बल्कि प्रतिदिन के अनुशासन से जीती जाती है।"'}
             </p>
-            <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100 dark:border-slate-800">
+            <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-100 dark:border-[#213059]">
               <span className="text-slate-500 dark:text-slate-400">
-                {language === 'en' ? 'Today’s Goal' : 'आज का लक्ष्य'}
+                {language === 'en' ? `Rec: ${attemptMeta.recommendedDailyHours}h/day` : `सुझाव: ${attemptMeta.recommendedDailyHours}h/दिन`}
               </span>
               <button
                 type="button"
                 onClick={() => setActiveTab('planner')}
-                className="font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                className="font-semibold text-violet-700 dark:text-violet-400 hover:underline cursor-pointer"
               >
                 {language === 'en' ? 'Open Planner' : 'प्लानर खोलें'} &rarr;
               </button>
@@ -580,22 +652,82 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         </div>
       </section>
 
-      {/* 4. All 4 CA Foundation Subjects & Complete 46-Chapter Syllabus */}
+      {/* 4. Attempt-Tailored Study Modules, Mock Tests & PYQ Focus */}
+      <section className="rounded-2xl bg-gradient-to-r from-[#0B1739] via-[#172554] to-[#4C1D95] text-white p-5 sm:p-6 shadow-sm border border-indigo-800/60 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-violet-200">
+              {attemptMeta.fullLabel[language]} · {attemptMeta.studyPhaseBadge[language]}
+            </span>
+            <h2 className="text-base sm:text-lg font-extrabold text-white mt-0.5">
+              {language === 'en'
+                ? `Curated Mocks, Modules & PYQs for ${attemptMeta.fullLabel.en}`
+                : `${attemptMeta.fullLabel.hi} हेतु विशेष मॉक टेस्ट, मॉड्यूल व PYQs`}
+            </h2>
+            <p className="text-xs text-indigo-100/85 mt-0.5">{attemptMeta.pyqFocusSummary[language]}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab('mocks')}
+            className="px-3.5 py-2 rounded-xl bg-white text-[#0B1739] hover:bg-violet-50 text-xs font-bold transition-colors cursor-pointer shrink-0 self-start sm:self-auto flex items-center gap-1.5"
+          >
+            <span>{language === 'en' ? `View ${attemptMeta.shortLabel.en} Mocks` : `${attemptMeta.shortLabel.hi} मॉक देखें`}</span>
+            <ArrowRight className="w-3.5 h-3.5 text-violet-700" />
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {attemptMocks.map((mock) => (
+            <button
+              key={mock.id}
+              type="button"
+              onClick={() => setActiveTab('mocks')}
+              className="p-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-left transition-colors cursor-pointer flex items-center justify-between gap-3"
+            >
+              <div className="min-w-0">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-violet-200 block">
+                  {language === 'en' ? 'Recommended Mock Test' : 'अनुशंसित मॉक टेस्ट'} · {mock.durationMinutes} min
+                </span>
+                <p className="text-xs sm:text-sm font-bold text-white truncate mt-0.5">{mock.title[language]}</p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-violet-200 shrink-0" />
+            </button>
+          ))}
+          {attemptNotes.slice(0, 2).map((note) => (
+            <button
+              key={note.id}
+              type="button"
+              onClick={() => setActiveTab('notes')}
+              className="p-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-left transition-colors cursor-pointer flex items-center justify-between gap-3"
+            >
+              <div className="min-w-0">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-200 block">
+                  {language === 'en' ? 'Attempt Revision Guide' : 'सत्र रिवीजन नोट्स'} · {note.readTimeMinutes}m read
+                </span>
+                <p className="text-xs sm:text-sm font-bold text-white truncate mt-0.5">{note.topicTitle[language]}</p>
+              </div>
+              <ChevronRight className="w-4 h-4 text-violet-200 shrink-0" />
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* 5. All 4 CA Foundation Subjects & Exam Preparation Progress Cards */}
       <section className="space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <h2 className="text-lg font-bold text-[#0F1E46] dark:text-white flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-violet-700 dark:text-violet-400" />
               <span>
                 {language === 'en'
-                  ? `CA Foundation ${resolvedCountdown.targetAttempt || 'January 2027'} Subjects (46 Chapters)`
-                  : `सीए फाउंडेशन ${resolvedCountdown.targetAttempt || 'जनवरी 2027'} विषय (46 अध्याय)`}
+                  ? `CA Foundation ${attemptMeta.fullLabel.en} Preparation Cards (46 Chapters)`
+                  : `सीए फाउंडेशन ${attemptMeta.fullLabel.hi} विषय तैयारी कार्ड (46 अध्याय)`}
               </span>
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
               {language === 'en'
-                ? `${syllabusAudit.coveredChapters}/${syllabusAudit.totalChapters} official chapters covered with topic-wise MCQs, PYQs & notes`
-                : `${syllabusAudit.coveredChapters}/${syllabusAudit.totalChapters} आधिकारिक अध्यायों में विषयवार MCQ व नोट्स उपलब्ध`}
+                ? `${overallMasteredCount}/${syllabusAudit.totalChapters} chapters mastered · ${syllabusAudit.coveredChapters}/${syllabusAudit.totalChapters} official chapters active with MCQs & PYQs`
+                : `${overallMasteredCount}/${syllabusAudit.totalChapters} अध्याय पूर्ण · ${syllabusAudit.coveredChapters} आधिकारिक अध्यायों में MCQ व PYQs उपलब्ध`}
             </p>
           </div>
 
@@ -603,15 +735,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             <button
               type="button"
               onClick={() => setShowSyllabusChecklist(true)}
-              className="text-xs font-semibold text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 px-3 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              className="text-xs font-semibold text-[#0F1E46] dark:text-slate-200 border border-slate-200 dark:border-[#24335C] px-3 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-[#131E3D] flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
-              <ListChecks className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <ListChecks className="w-3.5 h-3.5 text-violet-700 dark:text-violet-400" />
               <span>{language === 'en' ? 'Syllabus Completeness Checklist' : 'पाठ्यक्रम पूर्णता सूची'}</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveTab('practice')}
-              className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap"
+              className="text-xs font-semibold text-violet-700 dark:text-violet-400 hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap"
             >
               <span>{language === 'en' ? 'Practice All' : 'सभी अभ्यास'}</span>
               <ArrowRight className="w-3.5 h-3.5" />
@@ -627,19 +759,19 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             return (
               <div
                 key={paper.id}
-                className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-xs hover:border-blue-300 dark:hover:border-blue-600 transition-colors flex flex-col justify-between"
+                className="bg-white dark:bg-[#0F1936] rounded-2xl p-4 sm:p-5 border border-slate-200/90 dark:border-[#213059] shadow-xs hover:border-violet-300 dark:hover:border-violet-600 transition-all flex flex-col justify-between"
               >
                 <div>
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 flex items-center justify-center shrink-0">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#0B1739] to-violet-700 text-white flex items-center justify-center shrink-0 shadow-xs">
                         <Icon className="w-5 h-5" />
                       </div>
                       <div>
-                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                        <span className="text-xs font-semibold text-violet-700 dark:text-violet-300 tabular-nums">
                           {paper.code} · {summary.totalChapters} Chapters · {summary.totalQuestions} MCQs
                         </span>
-                        <h3 className="font-bold text-slate-900 dark:text-white text-sm sm:text-base leading-snug">
+                        <h3 className="font-bold text-[#0F1E46] dark:text-white text-sm sm:text-base leading-snug">
                           {paper.name[language]}
                         </h3>
                       </div>
@@ -647,29 +779,29 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   </div>
 
                   <div className="mt-3">
-                    <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
+                    <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400 mb-1.5">
                       <span>
-                        {language === 'en' ? 'Your Chapter Progress' : 'आपकी अध्याय प्रगति'} ({paperStats.mastered}/
+                        {language === 'en' ? 'Chapter Mastery' : 'अध्याय प्रगति'} ({paperStats.mastered}/
                         {paperStats.total})
                       </span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-200 tabular-nums">
+                      <span className="font-bold text-[#0F1E46] dark:text-slate-200 tabular-nums">
                         {paperStats.percent}%
                       </span>
                     </div>
-                    <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2 overflow-hidden">
+                    <div className="w-full bg-slate-100 dark:bg-[#1A274D] rounded-full h-2 overflow-hidden">
                       <div
-                        className="bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all"
+                        className="bg-gradient-to-r from-[#172554] to-violet-600 h-2 rounded-full transition-all"
                         style={{ width: `${paperStats.percent}%` }}
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100 dark:border-[#213059]">
                   <button
                     type="button"
                     onClick={() => handleStartPaperPractice(paper.id)}
-                    className="flex-1 py-2 px-3 rounded-lg bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                    className="flex-1 py-2 px-3 rounded-xl bg-violet-50 dark:bg-violet-950/60 hover:bg-violet-100 dark:hover:bg-violet-900/60 text-violet-800 dark:text-violet-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <BookOpen className="w-3.5 h-3.5" />
                     <span>{language === 'en' ? 'Chapter MCQs & PYQs' : 'अध्याय MCQ व PYQ'}</span>
@@ -677,7 +809,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   <button
                     type="button"
                     onClick={() => setActiveTab('notes')}
-                    className="py-2 px-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-medium transition-colors cursor-pointer"
+                    className="py-2 px-3 rounded-xl border border-slate-200 dark:border-[#24335C] hover:bg-slate-50 dark:hover:bg-[#131E3D] text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors cursor-pointer"
                   >
                     {language === 'en' ? 'Notes' : 'नोट्स'}
                   </button>
@@ -688,15 +820,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         </div>
       </section>
 
-      {/* 5. Core Learning Tools */}
+      {/* 6. Core Learning Tools */}
       <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         <button
           type="button"
           onClick={() => setActiveTab('dailyChallenge')}
-          className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-amber-400 text-left transition-colors cursor-pointer"
+          className="p-3.5 bg-white dark:bg-[#0F1936] rounded-xl border border-slate-200/90 dark:border-[#213059] hover:border-violet-400 text-left transition-colors cursor-pointer"
         >
           <Sparkles className="w-5 h-5 text-amber-500 mb-2" />
-          <span className="text-xs font-bold text-slate-900 dark:text-white block">
+          <span className="text-xs font-bold text-[#0F1E46] dark:text-white block">
             {language === 'en' ? 'Daily 10 Quiz' : 'दैनिक 10 प्रश्न'}
           </span>
           <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
@@ -707,11 +839,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('doubtSolver')}
-          className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-400 text-left transition-colors cursor-pointer"
+          className="p-3.5 bg-white dark:bg-[#0F1936] rounded-xl border border-slate-200/90 dark:border-[#213059] hover:border-violet-400 text-left transition-colors cursor-pointer"
         >
-          <Sparkle className="w-5 h-5 text-indigo-600 dark:text-indigo-400 mb-2" />
-          <span className="text-xs font-bold text-slate-900 dark:text-white block">
-            {language === 'en' ? 'AI Doubt Solver' : 'एआई शंका समाधान'}
+          <Sparkle className="w-5 h-5 text-violet-700 dark:text-violet-400 mb-2" />
+          <span className="text-xs font-bold text-[#0F1E46] dark:text-white block">
+            {language === 'en' ? 'CA Saathi AI' : 'सीए साथी AI'}
           </span>
           <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
             {language === 'en' ? 'Concept breakdown' : 'चरणबद्ध हल'}
@@ -721,24 +853,24 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('mocks')}
-          className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-400 text-left transition-colors cursor-pointer"
+          className="p-3.5 bg-white dark:bg-[#0F1936] rounded-xl border border-slate-200/90 dark:border-[#213059] hover:border-violet-400 text-left transition-colors cursor-pointer"
         >
-          <Award className="w-5 h-5 text-blue-600 dark:text-blue-400 mb-2" />
-          <span className="text-xs font-bold text-slate-900 dark:text-white block">
+          <Award className="w-5 h-5 text-[#172554] dark:text-indigo-300 mb-2" />
+          <span className="text-xs font-bold text-[#0F1E46] dark:text-white block">
             {language === 'en' ? 'Mock Tests' : 'मॉक टेस्ट'}
           </span>
           <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
-            {language === 'en' ? 'Jan 2027 Pattern' : 'जनवरी 2027 प्रारूप'}
+            {attemptMeta.shortLabel[language]} {language === 'en' ? 'Pattern' : 'प्रारूप'}
           </span>
         </button>
 
         <button
           type="button"
           onClick={() => setActiveTab('leaderboard')}
-          className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-400 text-left transition-colors cursor-pointer"
+          className="p-3.5 bg-white dark:bg-[#0F1936] rounded-xl border border-slate-200/90 dark:border-[#213059] hover:border-violet-400 text-left transition-colors cursor-pointer"
         >
           <Trophy className="w-5 h-5 text-amber-600 dark:text-amber-400 mb-2" />
-          <span className="text-xs font-bold text-slate-900 dark:text-white block">
+          <span className="text-xs font-bold text-[#0F1E46] dark:text-white block">
             {language === 'en' ? 'AIR Rankings' : 'ऑल इंडिया रैंक'}
           </span>
           <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
@@ -749,10 +881,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         <button
           type="button"
           onClick={() => setActiveTab('progress')}
-          className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-400 text-left transition-colors cursor-pointer"
+          className="p-3.5 bg-white dark:bg-[#0F1936] rounded-xl border border-slate-200/90 dark:border-[#213059] hover:border-violet-400 text-left transition-colors cursor-pointer"
         >
           <BarChart3 className="w-5 h-5 text-emerald-600 dark:text-emerald-400 mb-2" />
-          <span className="text-xs font-bold text-slate-900 dark:text-white block">
+          <span className="text-xs font-bold text-[#0F1E46] dark:text-white block">
             {language === 'en' ? 'Study Tracker' : 'स्टडी ट्रैकर'}
           </span>
           <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block">
@@ -764,10 +896,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           <button
             type="button"
             onClick={onOpenReferralModal}
-            className="p-3.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-400 text-left transition-colors cursor-pointer"
+            className="p-3.5 bg-white dark:bg-[#0F1936] rounded-xl border border-slate-200/90 dark:border-[#213059] hover:border-violet-400 text-left transition-colors cursor-pointer"
           >
-            <Gift className="w-5 h-5 text-rose-600 dark:text-rose-400 mb-2" />
-            <span className="text-xs font-bold text-slate-900 dark:text-white block">
+            <Gift className="w-5 h-5 text-violet-600 dark:text-violet-400 mb-2" />
+            <span className="text-xs font-bold text-[#0F1E46] dark:text-white block">
               {language === 'en' ? 'Refer & Rewards' : 'रेफर व पुरस्कार'}
             </span>
             <span className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 block tabular-nums">
@@ -777,11 +909,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         )}
       </section>
 
-      {/* 6. Single Common Student Group & Live Peer Study Room */}
-      <section className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* 7. Single Common Student Group & Live Peer Study Room */}
+      <section className="bg-white dark:bg-[#0F1936] rounded-2xl p-5 border border-slate-200/90 dark:border-[#213059] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-            <span className="font-semibold text-blue-700 dark:text-blue-400">
+            <span className="font-semibold text-violet-700 dark:text-violet-400">
               {language === 'en' ? 'Single Common Community' : 'एक साझा विद्यार्थी समुदाय'}
             </span>
             <span aria-hidden="true">·</span>
@@ -793,39 +925,39 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   : 'लाइव स्टडी रूम तैयार'}
             </span>
           </div>
-          <h3 className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
-            <Users className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <span>{language === 'en' ? 'CA Saathi Jan 2027 Aspirants Community' : 'सीए साथी जनवरी 2027 विद्यार्थी समुदाय'}</span>
+          <h3 className="font-bold text-base text-[#0F1E46] dark:text-white flex items-center gap-2">
+            <Users className="w-4 h-4 text-violet-700 dark:text-violet-400" />
+            <span>{language === 'en' ? 'CA Saathi Aspirants Community (2027 Attempts)' : 'सीए साथी 2027 विद्यार्थी समुदाय'}</span>
           </h3>
           <p className="text-xs text-slate-600 dark:text-slate-300 max-w-2xl">
             {language === 'en'
-              ? 'All CA Foundation students connect inside one unified group—filter doubts by Paper 1–4, study alongside live peers, and view real study timers.'
-              : 'सभी सीए फाउंडेशन विद्यार्थी एक साझा समूह में जुड़ते हैं—पेपर 1–4 के अनुसार शंकाएं पूछें व लाइव स्टडी रूम में साथ पढ़ें।'}
+              ? 'All January 2027 & May 2027 CA Foundation students connect inside one unified group—filter doubts by Paper 1–4, study alongside live peers, and view real study timers.'
+              : 'जनवरी 2027 व मई 2027 के सभी विद्यार्थी एक साझा समूह में जुड़ते हैं—पेपर 1–4 के अनुसार शंकाएं पूछें व लाइव स्टडी रूम में साथ पढ़ें।'}
           </p>
         </div>
 
         <button
           type="button"
           onClick={() => setActiveTab('community')}
-          className="px-4 py-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white font-semibold text-xs sm:text-sm transition-colors cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap self-start md:self-auto"
+          className="px-4 py-2.5 rounded-xl bg-[#172554] hover:bg-[#1E3A8A] text-white font-semibold text-xs sm:text-sm transition-colors cursor-pointer flex items-center gap-2 shrink-0 whitespace-nowrap self-start md:self-auto"
         >
           <Users className="w-4 h-4" />
           <span>{language === 'en' ? 'Open Common Group' : 'साझा ग्रुप खोलें'}</span>
         </button>
       </section>
 
-      {/* 7. Today's Tasks & Latest ICAI Notification */}
+      {/* 8. Today's Tasks & Latest ICAI Notification */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-xs">
+        <div className="bg-white dark:bg-[#0F1936] rounded-xl p-4 border border-slate-200/90 dark:border-[#213059] shadow-xs">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="font-bold text-slate-900 dark:text-white text-sm flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <h3 className="font-bold text-[#0F1E46] dark:text-white text-sm flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-violet-700 dark:text-violet-400" />
               {language === 'en' ? "Today's Study Checklist" : 'आज की अध्ययन सूची'}
             </h3>
             <button
               type="button"
               onClick={() => setActiveTab('planner')}
-              className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+              className="text-xs font-semibold text-violet-700 dark:text-violet-400 hover:underline cursor-pointer"
             >
               {language === 'en' ? 'Open Syllabus & Planner' : 'प्लानर खोलें'} &rarr;
             </button>
@@ -842,10 +974,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   key={task.id}
                   type="button"
                   onClick={() => setActiveTab('planner')}
-                  className="w-full p-3 rounded-lg border border-slate-200/80 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-700 bg-slate-50/70 dark:bg-slate-800/40 transition-colors flex items-center justify-between text-left cursor-pointer"
+                  className="w-full p-3 rounded-lg border border-slate-200/80 dark:border-[#24335C] hover:border-violet-300 dark:hover:border-violet-700 bg-slate-50/70 dark:bg-[#131E3D]/60 transition-colors flex items-center justify-between text-left cursor-pointer"
                 >
                   <div>
-                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 line-clamp-1">
+                    <p className="text-xs font-semibold text-[#0F1E46] dark:text-slate-200 line-clamp-1">
                       {task.title[language]}
                     </p>
                     <span className="text-[11px] text-slate-500 dark:text-slate-400">
@@ -859,7 +991,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 rounded-xl p-4 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+        <div className="bg-white dark:bg-[#0F1936] rounded-xl p-4 border border-slate-200/90 dark:border-[#213059] shadow-xs flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-2">
               <span className="font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
@@ -868,7 +1000,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </span>
               <span>{latestUpdate.date}</span>
             </div>
-            <h4 className="font-bold text-slate-900 dark:text-white text-sm mb-1">
+            <h4 className="font-bold text-[#0F1E46] dark:text-white text-sm mb-1">
               {latestUpdate.title[language]}
             </h4>
             <p className="text-xs text-slate-600 dark:text-slate-300 line-clamp-2 leading-relaxed">
@@ -879,25 +1011,25 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('updates')}
-            className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline self-start cursor-pointer"
+            className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-violet-700 dark:text-violet-400 hover:underline self-start cursor-pointer"
           >
             {language === 'en' ? 'Read Official Updates' : 'सभी अपडेट्स पढ़ें'} &rarr;
           </button>
         </div>
       </section>
 
-      {/* 8. Mock Test & Payment History */}
+      {/* 9. Mock Test & Payment History */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <section className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+        <section className="bg-white dark:bg-[#0F1936] rounded-xl p-5 border border-slate-200/90 dark:border-[#213059] shadow-xs space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
-              <Award className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+            <h3 className="font-bold text-sm text-[#0F1E46] dark:text-white flex items-center gap-2">
+              <Award className="w-4 h-4 text-violet-700 dark:text-violet-400" />
               <span>{language === 'en' ? 'Recent Mock Tests' : 'हालिया मॉक टेस्ट'}</span>
             </h3>
             <button
               type="button"
               onClick={() => setActiveTab('mocks')}
-              className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+              className="text-xs font-semibold text-violet-700 dark:text-violet-400 hover:underline cursor-pointer"
             >
               {language === 'en' ? 'Open Mocks' : 'टेस्ट खोलें'} &rarr;
             </button>
@@ -912,16 +1044,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               {testHistory.slice(0, 3).map((test, idx) => (
                 <div
                   key={`${test.testId}_${idx}`}
-                  className="p-3 rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center justify-between gap-3 text-xs"
+                  className="p-3 rounded-lg border border-slate-200/80 dark:border-[#24335C] bg-slate-50/50 dark:bg-[#131E3D]/60 flex items-center justify-between gap-3 text-xs"
                 >
                   <div className="min-w-0">
-                    <p className="font-semibold text-slate-900 dark:text-white truncate">{test.testTitle[language]}</p>
+                    <p className="font-semibold text-[#0F1E46] dark:text-white truncate">{test.testTitle[language]}</p>
                     <span className="text-[11px] text-slate-500 dark:text-slate-400 tabular-nums">
                       {test.date} · {test.correct}/{test.totalQuestions} correct
                     </span>
                   </div>
                   <div className="text-right shrink-0 tabular-nums">
-                    <span className="font-bold text-slate-900 dark:text-white block">{test.score.toFixed(2)}</span>
+                    <span className="font-bold text-[#0F1E46] dark:text-white block">{test.score.toFixed(2)}</span>
                     <span className="text-[11px] text-slate-500 dark:text-slate-400">{test.percentage}%</span>
                   </div>
                 </div>
@@ -931,9 +1063,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         </section>
 
         {!isSuperAdmin && (
-          <section className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-200 dark:border-slate-800 shadow-xs space-y-3">
+          <section className="bg-white dark:bg-[#0F1936] rounded-xl p-5 border border-slate-200/90 dark:border-[#213059] shadow-xs space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-2">
+              <h3 className="font-bold text-sm text-[#0F1E46] dark:text-white flex items-center gap-2">
                 <Receipt className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 <span>{language === 'en' ? 'Your Payment History' : 'आपका भुगतान इतिहास'}</span>
               </h3>
@@ -963,10 +1095,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 {paymentHistory.slice(0, 3).map((p) => (
                   <div
                     key={p.id}
-                    className="p-3 rounded-lg border border-slate-200/80 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 flex items-center justify-between gap-3 text-xs"
+                    className="p-3 rounded-lg border border-slate-200/80 dark:border-[#24335C] bg-slate-50/50 dark:bg-[#131E3D]/60 flex items-center justify-between gap-3 text-xs"
                   >
                     <div className="min-w-0">
-                      <p className="font-semibold text-slate-900 dark:text-white tabular-nums">
+                      <p className="font-semibold text-[#0F1E46] dark:text-white tabular-nums">
                         ₹{p.amount} Monthly Pass · {p.status.toUpperCase()}
                       </p>
                       <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate block">
@@ -977,7 +1109,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       <button
                         type="button"
                         onClick={onOpenPaymentModal}
-                        className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium cursor-pointer shrink-0"
+                        className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-[#24335C] text-slate-700 dark:text-slate-300 text-xs font-medium cursor-pointer shrink-0"
                       >
                         {language === 'en' ? 'Details' : 'विवरण'}
                       </button>
@@ -990,21 +1122,21 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         )}
       </div>
 
-      {/* Syllabus Completeness Checklist Modal (All 46 Canonical ICAI Jan 2027 Chapters) */}
+      {/* Syllabus Completeness Checklist Modal (All 46 Canonical ICAI 2027 Chapters) */}
       {showSyllabusChecklist && (
-        <div className="fixed inset-0 z-50 bg-slate-950/65 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-4xl w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3">
+        <div className="fixed inset-0 z-50 bg-[#080F24]/70 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#0F1936] border border-slate-200 dark:border-[#24335C] rounded-2xl max-w-4xl w-full max-h-[88vh] flex flex-col shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 bg-gradient-to-r from-[#0B1739] to-[#4C1D95] text-white flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-violet-200" />
                   <span>
                     {language === 'en'
-                      ? 'ICAI January 2027 Syllabus Completeness Checklist'
-                      : 'आईसीएआई जनवरी 2027 पाठ्यक्रम पूर्णता सूची'}
+                      ? `ICAI ${attemptMeta.fullLabel.en} Syllabus Completeness Checklist`
+                      : `आईसीएआई ${attemptMeta.fullLabel.hi} पाठ्यक्रम पूर्णता सूची`}
                   </span>
                 </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 tabular-nums">
+                <p className="text-xs text-violet-100/85 tabular-nums">
                   {syllabusAudit.coveredChapters}/{syllabusAudit.totalChapters} chapters active ({syllabusAudit.overallCompletenessPercent}% coverage) · {questionBank.length} MCQs verified
                 </p>
               </div>
@@ -1012,13 +1144,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 type="button"
                 onClick={() => setShowSyllabusChecklist(false)}
                 aria-label="Close syllabus checklist"
-                className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+                className="p-2 rounded-lg text-white/80 hover:bg-white/10 cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-slate-950/40">
+            <div className="px-5 py-3 border-b border-slate-100 dark:border-[#213059] flex flex-wrap items-center gap-2 bg-slate-50 dark:bg-[#0B132B]/60">
               {(['all', 'paper1', 'paper2', 'paper3', 'paper4'] as const).map((pid) => (
                 <button
                   key={pid}
@@ -1026,8 +1158,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   onClick={() => setChecklistPaperFilter(pid)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap ${
                     checklistPaperFilter === pid
-                      ? 'bg-blue-700 text-white'
-                      : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                      ? 'bg-violet-700 text-white'
+                      : 'bg-white dark:bg-[#131E3D] text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-[#24335C]'
                   }`}
                 >
                   {pid === 'all'

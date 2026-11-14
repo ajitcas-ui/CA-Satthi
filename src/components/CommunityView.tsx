@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
+  ExamAttemptId,
   Language,
   UserProfile,
   CommunityPost,
@@ -8,6 +9,7 @@ import {
   StudyPresence,
 } from '../types';
 import { PAPERS } from '../data/papersData';
+import { getAttemptMetadata } from '../utils/examAttempt';
 import { COMMON_GROUP_ID, INITIAL_GROUPS } from '../data/communityData';
 import {
   getPosts,
@@ -52,15 +54,18 @@ import {
 
 interface CommunityViewProps {
   language: Language;
+  selectedAttempt?: ExamAttemptId;
   currentUser: UserProfile;
   livePeers?: StudyPresence[];
 }
 
 export const CommunityView: React.FC<CommunityViewProps> = ({
   language,
+  selectedAttempt = 'January 2027',
   currentUser,
   livePeers = [],
 }) => {
+  const attemptMeta = getAttemptMetadata(selectedAttempt);
   const [activeMainTab, setActiveMainTab] = useState<'discussions' | 'liveRoom' | 'partners'>('discussions');
   const [posts, setPosts] = useState<CommunityPost[]>(() => getPosts());
   const [partners, setPartners] = useState<StudyPartner[]>(() => getStudyPartners());
@@ -122,7 +127,7 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
       content: postContent,
       paperId: postPaper ? (postPaper as PaperId) : undefined,
       chapterName: postChapter.trim() || undefined,
-      tags: tags.length > 0 ? tags : ['Jan 2027'],
+      tags: tags.length > 0 ? tags : [attemptMeta.shortLabel.en],
     });
 
     createCommunityPostInDb({
@@ -135,7 +140,7 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
       content: postContent,
       paperId: postPaper ? (postPaper as PaperId) : undefined,
       chapterName: postChapter.trim() || undefined,
-      tags: tags.length > 0 ? tags : ['Jan 2027'],
+      tags: tags.length > 0 ? tags : [attemptMeta.shortLabel.en],
     }).catch(console.error);
 
     setPosts([created, ...posts]);
@@ -273,8 +278,8 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
       {/* Header & Common Group Identity */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Users className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+          <h1 className="text-2xl font-extrabold text-[#0F1E46] dark:text-white flex items-center gap-2 tracking-tight">
+            <Users className="w-6 h-6 text-violet-700 dark:text-violet-400" />
             {commonGroup.name[language]}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
@@ -283,13 +288,13 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
         </div>
 
         {/* Tab switcher: Common Group Feed / Live Study Room / Study Partners */}
-        <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 self-start md:self-auto">
+        <div className="flex items-center p-1 bg-slate-100 dark:bg-[#0F1936] rounded-xl border border-slate-200 dark:border-[#213059] self-start md:self-auto">
           <button
             onClick={() => setActiveMainTab('discussions')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeMainTab === 'discussions'
-                ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-[#172554] text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-[#0F1E46] dark:hover:text-white'
             }`}
           >
             {language === 'en' ? 'Common Group Feed' : 'समुदाय चर्चा'}
@@ -298,8 +303,8 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
             onClick={() => setActiveMainTab('liveRoom')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
               activeMainTab === 'liveRoom'
-                ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-300 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-[#172554] text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-[#0F1E46] dark:hover:text-white'
             }`}
           >
             <Radio className="w-3.5 h-3.5 text-emerald-500" />
@@ -311,8 +316,8 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
             onClick={() => setActiveMainTab('partners')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
               activeMainTab === 'partners'
-                ? 'bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                ? 'bg-[#172554] text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-[#0F1E46] dark:hover:text-white'
             }`}
           >
             {language === 'en' ? 'Study Partners' : 'स्टडी पार्टनर'}
@@ -330,8 +335,8 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
             </span>{' '}
             <span className="text-emerald-800 dark:text-emerald-300">
               {language === 'en'
-                ? 'Student phone numbers and emails are strictly hidden. Academic discussions only for January 2027.'
-                : 'फोन नंबर व ईमेल पूर्णतः गोपनीय हैं। केवल जनवरी 2027 परीक्षा से संबंधित चर्चा करें।'}
+                ? 'Student phone numbers and emails are strictly hidden. Academic discussions for January 2027 & May 2027 batches.'
+                : 'फोन नंबर व ईमेल पूर्णतः गोपनीय हैं। जनवरी 2027 एवं मई 2027 परीक्षा हेतु शैक्षणिक चर्चा।'}
             </span>
           </div>
         </div>
@@ -359,7 +364,7 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
 
               <button
                 onClick={() => setShowNewPostModal(true)}
-                className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-xs cursor-pointer shrink-0"
+                className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-violet-700 hover:bg-violet-800 text-white font-bold text-xs shadow-xs cursor-pointer shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 <span>{language === 'en' ? 'Ask Doubt in Community' : 'शंका पूछें'}</span>
@@ -379,7 +384,7 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
                   onClick={() => setPaperFilter(pf.id)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer transition-colors ${
                     paperFilter === pf.id
-                      ? 'bg-blue-600 border-blue-600 text-white'
+                      ? 'bg-[#172554] border-[#172554] text-white'
                       : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
                   }`}
                 >
@@ -574,9 +579,9 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
         <div className="space-y-4">
           <div className="bg-white dark:bg-slate-900 rounded-2xl p-5 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <h3 className="text-base font-bold text-[#0F1E46] dark:text-white flex items-center gap-2">
                 <Radio className="w-4 h-4 text-emerald-500" />
-                <span>{language === 'en' ? 'Live Co-Study Room (January 2027 Cohort)' : 'लाइव सह-अध्ययन कक्ष'}</span>
+                <span>{language === 'en' ? 'Live Co-Study Room (2027 Cohort)' : 'लाइव सह-अध्ययन कक्ष (2027 बैच)'}</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
                 {language === 'en'
@@ -590,7 +595,7 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
           </div>
 
           {livePeers.length === 0 ? (
-            <div className="bg-white dark:bg-slate-900 rounded-2xl p-10 text-center border border-dashed border-slate-300 dark:border-slate-700 space-y-2">
+            <div className="bg-white dark:bg-[#0F1936] rounded-2xl p-10 text-center border border-dashed border-slate-300 dark:border-[#213059] space-y-2">
               <Clock className="w-10 h-10 text-slate-300 mx-auto" />
               <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200">
                 {language === 'en'
@@ -608,7 +613,7 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
               {livePeers.map((peer) => (
                 <div
                   key={peer.userId}
-                  className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3"
+                  className="bg-white dark:bg-[#0F1936] rounded-2xl p-4 border border-slate-200 dark:border-[#213059] flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-xl shrink-0">
@@ -619,8 +624,8 @@ export const CommunityView: React.FC<CommunityViewProps> = ({
                       <p className="text-[11px] text-slate-500 truncate">
                         {peer.activeTopic || 'CA Foundation Study'} • {(peer.activePaperId || 'paper1').toUpperCase()}
                       </p>
-                      <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold">
-                        {peer.targetAttempt || 'January 2027'}
+                      <span className="text-[10px] text-violet-700 dark:text-violet-300 font-semibold">
+                        {peer.targetAttempt || selectedAttempt}
                       </span>
                     </div>
                   </div>

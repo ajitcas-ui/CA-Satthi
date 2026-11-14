@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
-import { Language, PaperId, StudyNote } from '../types';
+import React, { useMemo, useState } from 'react';
+import { ExamAttemptId, Language, StudyNote } from '../types';
 import { PAPERS } from '../data/papersData';
 import { MOCK_NOTES } from '../data/mockNotes';
+import { SUPPORTED_EXAM_ATTEMPTS, filterNotesForAttempt, getAttemptMetadata } from '../utils/examAttempt';
 import { 
   FileText, 
   Search, 
@@ -9,27 +10,41 @@ import {
   Sparkles, 
   Printer, 
   BookOpen, 
-  Languages, 
   Lightbulb, 
-  Tag,
   CheckCircle2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Calendar,
 } from 'lucide-react';
 
 interface StudyNotesViewProps {
   language: Language;
   studyNotes?: StudyNote[];
+  selectedAttempt: ExamAttemptId;
+  onChangeAttempt?: (attempt: ExamAttemptId) => void;
 }
 
-export const StudyNotesView: React.FC<StudyNotesViewProps> = ({ language, studyNotes }) => {
+export const StudyNotesView: React.FC<StudyNotesViewProps> = ({
+  language,
+  studyNotes,
+  selectedAttempt,
+  onChangeAttempt,
+}) => {
   const allNotes = studyNotes && studyNotes.length > 0 ? studyNotes : MOCK_NOTES;
   const [selectedPaper, setSelectedPaper] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLargeFont, setIsLargeFont] = useState(false);
-  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(allNotes[0]?.id || null);
+  const [showAllAttempts, setShowAllAttempts] = useState(false);
 
-  const filteredNotes = allNotes.filter((note) => {
+  const attemptNotes = useMemo(
+    () => filterNotesForAttempt(allNotes, selectedAttempt, showAllAttempts),
+    [allNotes, selectedAttempt, showAllAttempts]
+  );
+  const [expandedNoteId, setExpandedNoteId] = useState<string | null>(attemptNotes[0]?.id || null);
+
+  const attemptMeta = useMemo(() => getAttemptMetadata(selectedAttempt), [selectedAttempt]);
+
+  const filteredNotes = attemptNotes.filter((note) => {
     if (selectedPaper !== 'all' && note.paperId !== selectedPaper) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -54,25 +69,61 @@ export const StudyNotesView: React.FC<StudyNotesViewProps> = ({ language, studyN
       {/* Header and Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <FileText className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            {language === 'en' ? 'CA Foundation Revision Notes' : 'सीए फाउंडेशन रिवीजन नोट्स'}
+          <h1 className="text-2xl font-bold text-[#0F1E46] dark:text-slate-100 flex items-center gap-2">
+            <FileText className="w-6 h-6 text-violet-700 dark:text-violet-400" />
+            {language === 'en'
+              ? `CA Foundation Study Notes (${attemptMeta.shortLabel.en})`
+              : `सीए फाउंडेशन रिवीजन नोट्स (${attemptMeta.shortLabel.hi})`}
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-            {language === 'en'
-              ? 'High-yield conceptual summaries, memory mnemonics, and formula cheat-sheets'
-              : 'उच्च-अंक अवधारणात्मक सारांश, याद रखने के निमोनिक ट्रिक्स व त्वरित सूत्र पत्रक'}
+            {attemptMeta.syllabusNote[language]}
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {onChangeAttempt && (
+            <div className="inline-flex items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-[#131E3D] border border-slate-200 dark:border-[#24335C]">
+              <Calendar className="w-3.5 h-3.5 text-violet-700 dark:text-violet-400 ml-1" />
+              {SUPPORTED_EXAM_ATTEMPTS.map((attempt) => {
+                const meta = getAttemptMetadata(attempt);
+                const active = selectedAttempt === attempt;
+                return (
+                  <button
+                    key={attempt}
+                    type="button"
+                    onClick={() => onChangeAttempt(attempt)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      active
+                        ? 'bg-gradient-to-r from-[#172554] to-violet-700 text-white shadow-xs'
+                        : 'text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {meta.shortLabel[language]}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowAllAttempts((prev) => !prev)}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer ${
+              showAllAttempts
+                ? 'bg-violet-700 border-violet-700 text-white'
+                : 'border-slate-200 dark:border-[#24335C] text-slate-600 dark:text-slate-300'
+            }`}
+          >
+            {showAllAttempts ? (language === 'en' ? 'All Notes' : 'सभी नोट्स') : attemptMeta.shortLabel[language]}
+          </button>
+
           {/* Font size toggle */}
           <button
             onClick={() => setIsLargeFont(!isLargeFont)}
             className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors cursor-pointer ${
               isLargeFont
-                ? 'bg-blue-50 dark:bg-blue-950/70 border-blue-400 dark:border-blue-500 text-blue-700 dark:text-blue-300'
-                : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                ? 'bg-violet-50 dark:bg-violet-950/70 border-violet-400 dark:border-violet-500 text-violet-700 dark:text-violet-300'
+                : 'border-slate-200 dark:border-[#24335C] text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#131E3D]'
             }`}
           >
             {isLargeFont ? (language === 'en' ? 'Text Size: Large' : 'अक्षर: बड़ा') : (language === 'en' ? 'Text Size: Normal' : 'अक्षर: सामान्य')}
@@ -82,7 +133,7 @@ export const StudyNotesView: React.FC<StudyNotesViewProps> = ({ language, studyN
           <button
             onClick={handlePrint}
             title={language === 'en' ? 'Print or Save Notes as PDF' : 'नोट्स प्रिंट या पीडीएफ सेव करें'}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-[#24335C] text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#131E3D] text-xs font-semibold cursor-pointer"
           >
             <Printer className="w-4 h-4 text-slate-500 dark:text-slate-400" />
             <span className="hidden sm:inline">{language === 'en' ? 'Print / PDF' : 'प्रिंट'}</span>
@@ -91,7 +142,7 @@ export const StudyNotesView: React.FC<StudyNotesViewProps> = ({ language, studyN
       </div>
 
       {/* Filter Chips & Search Bar */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl p-3 border border-slate-200/90 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+      <div className="bg-white dark:bg-[#0F1936] rounded-xl p-3 border border-slate-200/90 dark:border-[#213059] shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         {/* Search */}
         <div className="relative flex-1">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -100,7 +151,7 @@ export const StudyNotesView: React.FC<StudyNotesViewProps> = ({ language, studyN
             placeholder={language === 'en' ? 'Search by topic, formula, or tag (e.g. TVM, Section 10)...' : 'अध्याय, सूत्र या टैग से खोजें (उदा. TVM, धारा 10)...'}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-xs focus:outline-blue-500"
+            className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-200 dark:border-[#24335C] bg-white dark:bg-[#131E3D] text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 text-xs focus:outline-violet-500"
           />
         </div>
 
@@ -110,8 +161,8 @@ export const StudyNotesView: React.FC<StudyNotesViewProps> = ({ language, studyN
             onClick={() => setSelectedPaper('all')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
               selectedPaper === 'all'
-                ? 'bg-blue-600 text-white shadow-xs'
-                : 'border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                ? 'bg-violet-700 text-white shadow-xs'
+                : 'border border-slate-200 dark:border-[#24335C] text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#131E3D]'
             }`}
           >
             {language === 'en' ? 'All' : 'सभी'}
@@ -122,8 +173,8 @@ export const StudyNotesView: React.FC<StudyNotesViewProps> = ({ language, studyN
               onClick={() => setSelectedPaper(p.id)}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 selectedPaper === p.id
-                  ? 'bg-blue-600 text-white shadow-xs'
-                  : 'border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  ? 'bg-violet-700 text-white shadow-xs'
+                  : 'border border-slate-200 dark:border-[#24335C] text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#131E3D]'
               }`}
             >
               {p.code}
@@ -135,7 +186,7 @@ export const StudyNotesView: React.FC<StudyNotesViewProps> = ({ language, studyN
       {/* Notes List */}
       <div className="space-y-4">
         {filteredNotes.length === 0 ? (
-          <div className="bg-white dark:bg-slate-900 rounded-xl p-8 text-center border border-dashed border-slate-300 dark:border-slate-700">
+          <div className="bg-white dark:bg-[#0F1936] rounded-xl p-8 text-center border border-dashed border-slate-300 dark:border-[#24335C]">
             <BookOpen className="w-10 h-10 text-slate-300 dark:text-slate-600 mx-auto mb-2" />
             <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
               {language === 'en' ? 'No revision notes match your search.' : 'आपकी खोज के अनुसार कोई नोट्स नहीं मिले।'}
@@ -149,16 +200,16 @@ export const StudyNotesView: React.FC<StudyNotesViewProps> = ({ language, studyN
             return (
               <article
                 key={note.id}
-                className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800 shadow-xs hover:border-blue-300 dark:hover:border-blue-700 transition-all overflow-hidden"
+                className="bg-white dark:bg-[#0F1936] rounded-2xl border border-slate-200/90 dark:border-[#213059] shadow-xs hover:border-violet-300 dark:hover:border-violet-600 transition-all overflow-hidden"
               >
                 {/* Note Card Header */}
                 <div
                   onClick={() => toggleExpand(note.id)}
-                  className="p-5 flex items-start justify-between gap-3 cursor-pointer bg-slate-50/50 dark:bg-slate-800/40 hover:bg-slate-50 dark:hover:bg-slate-800/70 transition-colors"
+                  className="p-5 flex items-start justify-between gap-3 cursor-pointer bg-slate-50/50 dark:bg-[#131E3D]/60 hover:bg-slate-50 dark:hover:bg-[#18264D] transition-colors"
                 >
                   <div className="space-y-1.5">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-md bg-blue-100 dark:bg-blue-950 text-blue-800 dark:text-blue-300 text-[11px] font-bold border border-blue-200 dark:border-blue-800">
+                      <span className="px-2 py-0.5 rounded-md bg-violet-100 dark:bg-violet-950 text-violet-800 dark:text-violet-300 text-[11px] font-bold border border-violet-200 dark:border-violet-800">
                         {paper?.code || 'CA NOTE'}
                       </span>
                       <span className="text-xs text-slate-500 dark:text-slate-400 font-semibold">
@@ -170,7 +221,7 @@ export const StudyNotesView: React.FC<StudyNotesViewProps> = ({ language, studyN
                       </span>
                     </div>
 
-                    <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
+                    <h2 className="text-base sm:text-lg font-bold text-[#0F1E46] dark:text-slate-100">
                       {note.topicTitle[language]}
                     </h2>
 

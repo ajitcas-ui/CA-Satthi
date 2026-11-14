@@ -883,17 +883,17 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
   const maxVisits = Math.max(1, ...reportBuckets.map((b) => b.visits));
 
   const renderSidebarContent = () => (
-    <div className="flex flex-col h-full">
-      <div className="px-4 h-16 flex items-center justify-between border-b border-slate-200 dark:border-slate-800">
+    <div className="flex flex-col h-full bg-[#0B1739] text-slate-100">
+      <div className="px-4 h-16 flex items-center justify-between border-b border-[#1E2F5C]">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-600 to-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm">
             <ShieldCheck className="w-4 h-4" />
           </div>
           <div>
-            <span className="font-bold text-sm text-slate-900 dark:text-white block leading-none">
+            <span className="font-extrabold text-sm text-white block leading-none tracking-tight">
               CA Saathi
             </span>
-            <span className="text-[11px] font-medium text-indigo-600 dark:text-indigo-400">
+            <span className="text-[11px] font-semibold text-violet-300">
               Owner Console
             </span>
           </div>
@@ -901,7 +901,7 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
         <button
           type="button"
           onClick={() => setMobileDrawerOpen(false)}
-          className="lg:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+          className="lg:hidden p-1.5 rounded-lg text-slate-300 hover:bg-[#172854] cursor-pointer"
           aria-label="Close navigation menu"
         >
           <X className="w-4 h-4" />
@@ -929,14 +929,14 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
                 setActiveSection(item.id);
                 setMobileDrawerOpen(false);
               }}
-              className={`w-full flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
+              className={`w-full flex items-center justify-between gap-2.5 px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
                 active
-                  ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800'
-                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800/70 border border-transparent'
+                  ? 'bg-violet-600 text-white shadow-sm'
+                  : 'text-slate-300 hover:bg-[#172854] hover:text-white'
               }`}
             >
               <span className="flex items-center gap-2.5 truncate">
-                <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`} />
+                <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-white' : 'text-slate-400'}`} />
                 <span className="truncate">{item.label}</span>
               </span>
               {badge > 0 && (
@@ -949,11 +949,11 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
         })}
       </nav>
 
-      <div className="p-3 border-t border-slate-200 dark:border-slate-800 space-y-2">
-        <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 text-xs">
-          <p className="font-semibold text-slate-900 dark:text-white truncate">{currentUser.name}</p>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">{currentUser.email}</p>
-          <span className="inline-block mt-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+      <div className="p-3 border-t border-[#1E2F5C] space-y-2">
+        <div className="p-2.5 rounded-xl bg-[#13224A] border border-[#21366C] text-xs">
+          <p className="font-semibold text-white truncate">{currentUser.name}</p>
+          <p className="text-[11px] text-slate-300 truncate">{currentUser.email}</p>
+          <span className="inline-block mt-1 text-[10px] font-semibold text-emerald-300">
             Free Owner Access Active
           </span>
         </div>
@@ -961,7 +961,7 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
         <button
           type="button"
           onClick={onExitToStudentApp}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs font-semibold cursor-pointer"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-[#243B73] hover:bg-[#172854] text-slate-100 text-xs font-semibold cursor-pointer transition-colors"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>Student App View</span>
@@ -970,7 +970,7 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
         <button
           type="button"
           onClick={() => logoutUser()}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs font-semibold cursor-pointer"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-rose-300 hover:bg-rose-950/40 text-xs font-semibold cursor-pointer transition-colors"
         >
           <LogOut className="w-3.5 h-3.5" />
           <span>Sign Out</span>
@@ -982,9 +982,9 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
   const currentSectionTitle = SECTION_ITEMS.find((s) => s.id === activeSection)?.label || 'Overview';
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex font-sans">
+    <div className="min-h-screen bg-[#F7F8FC] dark:bg-[#080E21] text-[#0F1E46] dark:text-slate-100 flex font-sans">
       {/* Desktop Fixed Sidebar Rail */}
-      <aside className="hidden lg:block w-64 shrink-0 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 sticky top-0 h-screen">
+      <aside className="hidden lg:block w-64 shrink-0 bg-[#0B1739] border-r border-[#1E2F5C] sticky top-0 h-screen">
         {renderSidebarContent()}
       </aside>
 
@@ -993,9 +993,9 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
         <div className="lg:hidden fixed inset-0 z-50 flex">
           <div
             onClick={() => setMobileDrawerOpen(false)}
-            className="fixed inset-0 bg-slate-950/60"
+            className="fixed inset-0 bg-[#0B1739]/70 backdrop-blur-xs"
           />
-          <aside className="relative z-10 w-68 max-w-[85vw] bg-white dark:bg-slate-900 h-full border-r border-slate-200 dark:border-slate-800 shadow-2xl">
+          <aside className="relative z-10 w-68 max-w-[85vw] bg-[#0B1739] h-full border-r border-[#1E2F5C] shadow-2xl">
             {renderSidebarContent()}
           </aside>
         </div>
@@ -1004,7 +1004,7 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
       {/* Main Content Workspace */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Crisp Single-Line Top Bar */}
-        <header className="sticky top-0 z-30 h-16 bg-white/98 dark:bg-slate-900/98 border-b border-slate-200 dark:border-slate-800 px-4 sm:px-6 flex items-center justify-between gap-4">
+        <header className="sticky top-0 z-30 h-16 bg-white/95 dark:bg-[#0F1936]/95 backdrop-blur-md border-b border-slate-200 dark:border-[#213059] px-4 sm:px-6 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <button
               type="button"
@@ -2324,12 +2324,37 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
               {contentSubTab === 'exam' && (
                 <form
                   onSubmit={handleSaveExamConfig}
-                  className="bg-white dark:bg-slate-900 rounded-xl p-5 border border-slate-200 dark:border-slate-800 max-w-2xl space-y-4"
+                  className="bg-white dark:bg-[#0F1936] rounded-xl p-5 border border-slate-200 dark:border-[#213059] max-w-2xl space-y-4"
                 >
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    <span>CA Foundation Exam Attempt & Verified Date Controls</span>
-                  </h3>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-bold text-[#0F1E46] dark:text-white flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-violet-700 dark:text-violet-400" />
+                      <span>CA Foundation Exam Attempt & Verified Date Controls</span>
+                    </h3>
+                    <div className="inline-flex items-center gap-1.5">
+                      {(['January 2027', 'May 2027'] as const).map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            setExamAttemptInput(preset);
+                            if (preset === 'May 2027' && (!examDateInput || examDateInput.startsWith('2027-01'))) {
+                              setExamDateInput('2027-05-15T14:00');
+                            } else if (preset === 'January 2027' && (!examDateInput || examDateInput.startsWith('2027-05'))) {
+                              setExamDateInput('2027-01-18T14:00');
+                            }
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer transition-colors ${
+                            examAttemptInput.toLowerCase().includes(preset.split(' ')[0].toLowerCase())
+                              ? 'bg-[#172554] text-white border-[#172554]'
+                              : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+                          }`}
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 block mb-1">
@@ -2375,7 +2400,7 @@ export const OwnerDashboardView: React.FC<OwnerDashboardViewProps> = ({
                   </div>
                   <button
                     type="submit"
-                    className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold cursor-pointer"
+                    className="px-4 py-2 rounded-lg bg-violet-700 hover:bg-violet-800 text-white text-xs font-semibold cursor-pointer"
                   >
                     Save Exam Configuration
                   </button>

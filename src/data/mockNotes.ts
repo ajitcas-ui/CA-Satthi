@@ -254,4 +254,70 @@ export const MOCK_NOTES: StudyNote[] = [
       },
     ],
   },
+  {
+    id: 'note_jan27_sprint',
+    paperId: 'paper1',
+    applicableAttempts: ['January 2027'],
+    chapterTitle: {
+      en: 'Jan 2027 Revision Strategy: High-Yield ABC Analysis',
+      hi: 'जनवरी 2027 रिवीजन रणनीति: उच्च-भार अध्याय विश्लेषण',
+    },
+    topicTitle: {
+      en: 'Top Scoring Chapters & Last-30-Day Execution Blueprint (Jan 2027)',
+      hi: 'सर्वाधिक अंक दिलाने वाले अध्याय एवं अंतिम 30-दिवसीय योजना (जनवरी 2027)',
+    },
+    readTimeMinutes: 5,
+    tags: ['Jan 2027', 'ABC Analysis', 'High Weightage'],
+    summary: {
+      en: 'Targeted weightage breakdown to maximize aggregate 250+ marks in CA Foundation January 2027 across all 4 papers.',
+      hi: 'जनवरी 2027 सीए फाउंडेशन में चारों विषयों को मिलाकर 250+ अंक अर्जित करने की लक्षित अध्याय प्राथमिकता।',
+    },
+    keyPoints: [
+      {
+        en: 'Paper 1 Priority: Company Accounts (Shares & Debentures), Partnership Goodwill/Admission/Retirement, Final Accounts & NPO cover 60%+ marks.',
+        hi: 'पेपर 1 प्राथमिकता: कंपनी खाते, साझेदारी, अंतिम खाते व NPO कुल 60%+ अंक कवर करते हैं।',
+      },
+      {
+        en: 'Paper 2 Priority: Indian Contract Act 1872 + Sale of Goods Act 1930 + Companies Act 2013 form the core descriptive writing block.',
+        hi: 'पेपर 2 प्राथमिकता: अनुबंध अधिनियम 1872, माल विक्रय 1930 व कंपनी अधिनियम 2013 सर्वाधिक पूछे जाते हैं।',
+      },
+      {
+        en: 'Paper 3 & 4 Priority: TVM (14–16 marks), Central Tendency & Dispersion, Elasticity, National Income & Money Market drive MCQ speed.',
+        hi: 'पेपर 3 व 4: TVM (14–16 अंक), केंद्रीय प्रवृत्ति, लोच, राष्ट्रीय आय व मुद्रा बाजार सर्वाधिक स्कोरिंग हैं।',
+      },
+    ],
+  },
+  {
+    id: 'note_may27_roadmap',
+    paperId: 'paper2',
+    applicableAttempts: ['May 2027'],
+    chapterTitle: {
+      en: 'May 2027 Concept Blueprint & Statutory Applicability',
+      hi: 'मई 2027 अवधारणा मानचित्र एवं अद्यतन वैधानिक प्रावधान',
+    },
+    topicTitle: {
+      en: 'Structured 2-Cycle Mastery Plan & Amendment Checklist (May 2027)',
+      hi: 'मई 2027 हेतु द्वि-स्तरीय पाठ्यक्रम पूर्णता व संशोधन सूची',
+    },
+    readTimeMinutes: 6,
+    tags: ['May 2027', 'Concept Mastery', 'ICAI New Scheme'],
+    summary: {
+      en: 'Complete two-phase preparation blueprint for May 2027 CA Foundation aspirants: build deep ICAI module fundamentals before transitioning to timed PYQ drills.',
+      hi: 'मई 2027 परीक्षा के विद्यार्थियों हेतु दो-चरणीय योजना: पहले सभी 46 अध्यायों की मूल अवधारणा मजबूत करें, फिर समयबद्ध PYQ और मॉक टेस्ट दें।',
+    },
+    keyPoints: [
+      {
+        en: 'Phase 1 (Concept Building): Complete all 46 official ICAI chapters topic-by-topic with handwritten summary tables and Section citations.',
+        hi: 'चरण 1 (अवधारणा निर्माण): सभी 46 आधिकारिक आईसीएआई अध्यायों को विषयवार सूत्र व धाराओं सहित पूरा करें।',
+      },
+      {
+        en: 'Paper 2 Statutory Accuracy: Quote Section numbers only when 100% certain; use IRAC structure (Issue, Legal Provision, Analysis, Conclusion).',
+        hi: 'पेपर 2 उत्तर लेखन: केस-लॉ प्रश्नों में 4 चरणों (तथ्य, वैधानिक प्रावधान, विश्लेषण, निष्कर्ष) का प्रयोग करें।',
+      },
+      {
+        en: 'Phase 2 (PYQ + Mock Calibration): Solve May 2025, Sep 2025, Jan 2026 & Jan 2027 ICAI question trends with strict -0.25 discipline.',
+        hi: 'चरण 2: विगत वर्षों के प्रश्नपत्रों (2024–2027) का -0.25 निगेटिव मार्किंग के साथ समयबद्ध अभ्यास करें।',
+      },
+    ],
+  },
 ];

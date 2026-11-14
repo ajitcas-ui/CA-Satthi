@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { Language, ExamUpdate } from '../types';
+import React, { useState, useMemo } from 'react';
+import { ExamAttemptId, Language, ExamUpdate } from '../types';
 import { MOCK_EXAM_UPDATES, EXAM_FAQS } from '../data/mockUpdates';
+import { SUPPORTED_EXAM_ATTEMPTS, filterUpdatesForAttempt, getAttemptMetadata } from '../utils/examAttempt';
 import { evaluatePassingCriteria, PassingEvaluation } from '../utils/quizEngine';
 import { 
   Bell, 
@@ -19,11 +20,23 @@ import {
 
 interface ExamUpdatesViewProps {
   language: Language;
+  selectedAttempt?: ExamAttemptId;
+  onChangeAttempt?: (attempt: ExamAttemptId) => void;
   examUpdates?: ExamUpdate[];
 }
 
-export const ExamUpdatesView: React.FC<ExamUpdatesViewProps> = ({ language, examUpdates }) => {
-  const updatesFeed = examUpdates && examUpdates.length > 0 ? examUpdates : MOCK_EXAM_UPDATES;
+export const ExamUpdatesView: React.FC<ExamUpdatesViewProps> = ({
+  language,
+  selectedAttempt = 'January 2027',
+  onChangeAttempt,
+  examUpdates,
+}) => {
+  const rawFeed = examUpdates && examUpdates.length > 0 ? examUpdates : MOCK_EXAM_UPDATES;
+  const updatesFeed = useMemo(
+    () => filterUpdatesForAttempt(rawFeed, selectedAttempt),
+    [rawFeed, selectedAttempt]
+  );
+  const attemptMeta = getAttemptMetadata(selectedAttempt);
   const [selectedUpdate, setSelectedUpdate] = useState<ExamUpdate | null>(null);
   const [expandedFaqId, setExpandedFaqId] = useState<string | null>(EXAM_FAQS[0]?.id || null);
 
@@ -46,31 +59,56 @@ export const ExamUpdatesView: React.FC<ExamUpdatesViewProps> = ({ language, exam
 
   return (
     <div className="space-y-6 pb-20 lg:pb-8">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-          <Bell className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-          {language === 'en' ? 'CA Foundation Exam Updates & Guidance' : 'सीए फाउंडेशन परीक्षा अपडेट्स एवं दिशा-निर्देश'}
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-          {language === 'en'
-            ? 'Latest ICAI announcements, passing marks criteria calculator, and exam hall FAQs'
-            : 'नवीनतम घोषणाएं, उत्तीर्ण अंक पात्रता कैलकुलेटर और परीक्षा संबंधी प्रश्नोत्तर'}
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-extrabold text-[#0F1E46] dark:text-slate-100 flex items-center gap-2 tracking-tight">
+            <Bell className="w-6 h-6 text-violet-700 dark:text-violet-400" />
+            {language === 'en' ? `CA Foundation Exam Updates (${attemptMeta.shortLabel.en})` : `सीए फाउंडेशन परीक्षा अपडेट्स (${attemptMeta.shortLabel.hi})`}
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+            {language === 'en'
+              ? `Latest ICAI announcements for ${attemptMeta.fullLabel.en}, passing marks criteria calculator, and FAQs`
+              : `${attemptMeta.fullLabel.hi} की नवीनतम घोषणाएं, उत्तीर्ण अंक कैलकुलेटर व प्रश्नोत्तर`}
+          </p>
+        </div>
+
+        {onChangeAttempt && (
+          <div className="inline-flex items-center p-1 rounded-xl bg-white dark:bg-[#0F1936] border border-slate-200 dark:border-[#213059] shadow-xs self-start sm:self-auto">
+            {SUPPORTED_EXAM_ATTEMPTS.map((attempt) => {
+              const active = selectedAttempt === attempt;
+              const meta = getAttemptMetadata(attempt);
+              return (
+                <button
+                  key={attempt}
+                  type="button"
+                  onClick={() => onChangeAttempt(attempt)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    active
+                      ? 'bg-[#172554] text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#192852]'
+                  }`}
+                >
+                  {meta.shortLabel[language]}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Passing Marks Eligibility Calculator Card */}
-      <section className="bg-gradient-to-br from-blue-900 via-indigo-900 to-slate-900 text-white rounded-2xl p-5 sm:p-7 shadow-lg border border-blue-800/50">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-blue-700/60 mb-5">
+      <section className="bg-gradient-to-br from-[#0B1739] via-[#17285D] to-[#4C1D95] text-white rounded-2xl p-5 sm:p-7 shadow-lg border border-violet-800/40">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-white/15 mb-5">
           <div>
-            <span className="text-[11px] font-bold uppercase tracking-wider text-blue-300">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-violet-300">
               {language === 'en' ? 'Interactive Tool' : 'इंटरएक्टिव टूल'}
             </span>
             <h2 className="text-lg sm:text-xl font-black text-white flex items-center gap-2 mt-0.5">
-              <Calculator className="w-5 h-5 text-blue-300" />
+              <Calculator className="w-5 h-5 text-violet-300" />
               {language === 'en' ? 'ICAI Passing Marks Eligibility Calculator' : 'आईसीएआई उत्तीर्ण अंक पात्रता कैलकुलेटर'}
             </h2>
           </div>
-          <div className="text-xs bg-blue-800/80 px-3 py-1.5 rounded-xl border border-blue-600 text-blue-200">
+          <div className="text-xs bg-white/10 px-3 py-1.5 rounded-xl border border-white/20 text-violet-100">
             {language === 'en' ? 'Rule: ≥ 40 each & ≥ 50% aggregate' : 'नियम: प्रत्येक में ≥ 40 व कुल ≥ 50%'}
           </div>
         </div>
@@ -178,8 +216,8 @@ export const ExamUpdatesView: React.FC<ExamUpdatesViewProps> = ({ language, exam
 
       {/* Official Updates & Announcements Feed */}
       <section className="space-y-4">
-        <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-          <Bell className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+        <h2 className="text-lg font-bold text-[#0F1E46] dark:text-slate-100 flex items-center gap-2">
+          <Bell className="w-5 h-5 text-violet-700 dark:text-violet-400" />
           {language === 'en' ? 'Latest Exam Announcements' : 'नवीनतम परीक्षा सूचनाएं'}
         </h2>
 
@@ -187,15 +225,15 @@ export const ExamUpdatesView: React.FC<ExamUpdatesViewProps> = ({ language, exam
           {updatesFeed.map((update) => (
             <div
               key={update.id}
-              className={`p-5 rounded-2xl border transition-all bg-white dark:bg-slate-900 ${
+              className={`p-5 rounded-2xl border transition-all bg-white dark:bg-[#0F1936] ${
                 update.isImportant
-                  ? 'border-blue-300 dark:border-blue-700 shadow-xs ring-1 ring-blue-500/10'
-                  : 'border-slate-200 dark:border-slate-800 shadow-xs'
+                  ? 'border-violet-300 dark:border-violet-700 shadow-xs ring-1 ring-violet-500/15'
+                  : 'border-slate-200 dark:border-[#213059] shadow-xs'
               }`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                 <div className="flex items-center gap-2">
-                  <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 text-xs font-bold border border-blue-200 dark:border-blue-800">
+                  <span className="px-2 py-0.5 rounded-full bg-violet-50 dark:bg-violet-950/60 text-violet-700 dark:text-violet-300 text-xs font-bold border border-violet-200 dark:border-violet-800">
                     {update.category}
                   </span>
                   {update.isImportant && (
@@ -207,7 +245,7 @@ export const ExamUpdatesView: React.FC<ExamUpdatesViewProps> = ({ language, exam
                 <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">{update.date}</span>
               </div>
 
-              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base mb-2">
+              <h3 className="font-bold text-[#0F1E46] dark:text-slate-100 text-base mb-2">
                 {update.title[language]}
               </h3>
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed mb-3">
@@ -216,7 +254,7 @@ export const ExamUpdatesView: React.FC<ExamUpdatesViewProps> = ({ language, exam
 
               <button
                 onClick={() => setSelectedUpdate(update)}
-                className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 flex items-center gap-1 cursor-pointer"
+                className="text-xs font-bold text-violet-700 dark:text-violet-400 hover:text-violet-900 dark:hover:text-violet-300 flex items-center gap-1 cursor-pointer"
               >
                 <span>{language === 'en' ? 'Read Complete Instructions' : 'पूरा विवरण पढ़ें'}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
@@ -281,7 +319,7 @@ export const ExamUpdatesView: React.FC<ExamUpdatesViewProps> = ({ language, exam
             <div className="flex justify-end">
               <button
                 onClick={() => setSelectedUpdate(null)}
-                className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer"
+                className="px-5 py-2 rounded-xl bg-violet-700 hover:bg-violet-800 text-white text-xs font-bold cursor-pointer"
               >
                 {language === 'en' ? 'Close' : 'बंद करें'}
               </button>
