@@ -43,14 +43,16 @@ service cloud.firestore {
       // Students can only register themselves with 'student' role and unpaid state
       allow create: if isValidId(userId) && isOwner(userId) &&
         incoming().id == userId &&
-        incoming().name is string && incoming().name.size() <= 100 &&
+        incoming().name is string && incoming().name.size() <= 150 &&
         incoming().email is string && incoming().email.size() <= 150 &&
         (isAdmin() || (
           incoming().role == 'student' &&
           (!('hasPaidPass' in incoming()) || incoming().hasPaidPass == false) &&
           (!('membershipStatus' in incoming()) || incoming().membershipStatus == 'unpaid') &&
           (!('isSuspended' in incoming()) || incoming().isSuspended == false) &&
-          (!('canUploadNotes' in incoming()) || incoming().canUploadNotes == false)
+          (!('canUploadNotes' in incoming()) || incoming().canUploadNotes == false) &&
+          !('subscriptionExpiresAt' in incoming()) &&
+          !('passExpiry' in incoming())
         ));
 
       // Students cannot self-approve membership, extend expiry, change role, grant upload permission, or unsuspend themselves
@@ -145,12 +147,18 @@ service cloud.firestore {
       allow create: if isSignedIn() && isValidId(postId) &&
         incoming().authorId == request.auth.uid &&
         incoming().title is string && incoming().title.size() <= 250 &&
-        incoming().content is string && incoming().content.size() <= 3000;
+        incoming().content is string && incoming().content.size() <= 3000 &&
+        (isAdmin() || (
+          (!('authorRole' in incoming()) || incoming().authorRole == 'student') &&
+          (!('isPinned' in incoming()) || incoming().isPinned == false)
+        ));
 
       allow update: if isAdmin() || (
         isSignedIn() && (
-          (existing().authorId == request.auth.uid && incoming().authorId == request.auth.uid) ||
-          incoming().diff(existing()).affectedKeys().hasOnly(['likes', 'likedBy', 'isResolved', 'replies'])
+          (existing().authorId == request.auth.uid &&
+            incoming().authorId == request.auth.uid &&
+            !incoming().diff(existing()).affectedKeys().hasAny(['authorId', 'authorRole', 'isPinned', 'groupId', 'createdAt'])) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['likes', 'likedBy', 'replies'])
         )
       );
 
@@ -160,7 +168,11 @@ service cloud.firestore {
         allow read: if true;
         allow create: if isSignedIn() && isValidId(replyId) &&
           incoming().authorId == request.auth.uid &&
-          incoming().content is string && incoming().content.size() <= 2000;
+          incoming().content is string && incoming().content.size() <= 2000 &&
+          (isAdmin() || (
+            (!('authorRole' in incoming()) || incoming().authorRole == 'student') &&
+            (!('isAcceptedSolution' in incoming()) || incoming().isAcceptedSolution == false)
+          ));
         allow update: if isAdmin() || (
           isSignedIn() && (
             (existing().authorId == request.auth.uid && incoming().authorId == request.auth.uid) ||
@@ -194,6 +206,10 @@ service cloud.firestore {
         incoming().utr is string && incoming().utr.size() >= 8 && incoming().utr.size() <= 40 &&
         incoming().amount is number && incoming().amount > 0 &&
         incoming().studentMobile is string && incoming().studentMobile.size() >= 10 && incoming().studentMobile.size() <= 15 &&
+        !('unlockedUntil' in incoming()) &&
+        !('reviewedBy' in incoming()) &&
+        !('reviewedAt' in incoming()) &&
+        !('adminNotes' in incoming()) &&
         (!('screenshotUrl' in incoming()) || (incoming().screenshotUrl is string && incoming().screenshotUrl.size() <= 750000));
       allow update, delete: if isAdmin();
     }
@@ -228,9 +244,14 @@ service cloud.firestore {
     // 8. Admin Analytics Events: /analyticsEvents/{eventId}
     match /analyticsEvents/{eventId} {
       allow create: if isValidId(eventId) &&
+        incoming().keys().hasAll(['id', 'visitorId', 'eventType', 'date', 'createdAt']) &&
+        incoming().keys().hasOnly(['id', 'userId', 'visitorId', 'eventType', 'date', 'createdAt']) &&
+        incoming().id == eventId &&
         incoming().eventType in ['visit', 'login', 'signup', 'study_session', 'payment_submit'] &&
         incoming().visitorId is string && incoming().visitorId.size() <= 80 &&
-        incoming().date is string && incoming().date.size() == 10;
+        incoming().date is string && incoming().date.size() == 10 &&
+        incoming().createdAt is string && incoming().createdAt.size() <= 64 &&
+        (!('userId' in incoming()) || (incoming().userId is string && incoming().userId.size() <= 128));
       allow read, update, delete: if isAdmin();
     }
 
