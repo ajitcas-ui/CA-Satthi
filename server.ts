@@ -11,8 +11,12 @@ dotenv.config();
 
 const firebaseConfigRaw = JSON.parse(
   fs.readFileSync(path.resolve(process.cwd(), 'firebase-applet-config.json'), 'utf8')
-) as { projectId: string; firestoreDatabaseId: string };
-const requireOwnerAuth = createRequireOwnerAuth(firebaseConfigRaw.projectId);
+) as { projectId: string; firestoreDatabaseId?: string };
+const serverFirebaseConfig = {
+  projectId: firebaseConfigRaw.projectId,
+  firestoreDatabaseId: firebaseConfigRaw.firestoreDatabaseId?.trim() || '(default)',
+};
+const requireOwnerAuth = createRequireOwnerAuth(serverFirebaseConfig.projectId);
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -43,7 +47,7 @@ app.use('/api/owner', (_req: Request, res: Response) => {
 // ============================================================================
 // PROTECTED PDF STUDY MATERIAL ROUTES (/api/materials/*)
 // ============================================================================
-registerMaterialRoutes(app, firebaseConfigRaw);
+registerMaterialRoutes(app, serverFirebaseConfig);
 
 // Subject labels for CA Foundation
 const SUBJECT_LABELS: Record<string, string> = {

@@ -9,6 +9,11 @@ import {
 } from '../firebase/services';
 import { auth } from '../firebase/config';
 import {
+  formatFirebaseAuthError,
+  FormattedFirebaseAuthError,
+  resolveGoogleUserEmail,
+} from '../utils/firebaseAuthError';
+import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
@@ -38,7 +43,7 @@ export const OwnerLoginView: React.FC<OwnerLoginViewProps> = ({
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [authError, setAuthError] = useState<FormattedFirebaseAuthError | null>(null);
   const [infoMsg, setInfoMsg] = useState('');
 
   const isSignedInNonOwner = Boolean(
@@ -54,29 +59,53 @@ export const OwnerLoginView: React.FC<OwnerLoginViewProps> = ({
       !isEmailVerified
   );
 
+  const getAuthContext = () => ({
+    hostname: typeof window !== 'undefined' ? window.location.hostname : undefined,
+    projectId: (auth.app.options as { projectId?: string })?.projectId || 'ca-satthi',
+  });
+
   const handleGoogleOwnerLogin = async () => {
-    setError('');
+    setAuthError(null);
     setInfoMsg('');
     setBusy(true);
     try {
-      const profile = await loginWithGoogle();
+      const profile = await loginWithGoogle({ loginHint: ADMIN_EMAIL });
       const fbUser = auth.currentUser;
-      const verifiedEmail = fbUser?.email?.toLowerCase().trim() || profile.email?.toLowerCase().trim();
-      if (verifiedEmail !== ADMIN_EMAIL || !fbUser?.emailVerified || profile.role !== 'admin') {
+      const verifiedEmail = resolveGoogleUserEmail(fbUser) || (profile.email || '').toLowerCase().trim();
+
+      if (verifiedEmail !== ADMIN_EMAIL) {
         await logoutUser();
-        setError(
-          `Unauthorized account (${verifiedEmail || 'unknown'}). Only the authorized owner account (${ADMIN_EMAIL}) can access /owner-dashboard.`
-        );
+        setAuthError({
+          code: 'owner/unauthorized-email',
+          rawMessage: `Signed in as "${verifiedEmail || 'unknown'}". Only "${ADMIN_EMAIL}" can access /owner-dashboard.`,
+          displayText: `[owner/unauthorized-email] Signed in as "${verifiedEmail || 'unknown'}". Only "${ADMIN_EMAIL}" can access /owner-dashboard.`,
+        });
         return;
       }
+
+      if (!fbUser?.emailVerified) {
+        await logoutUser();
+        setAuthError({
+          code: 'owner/email-not-verified',
+          rawMessage: `Firebase Auth reported emailVerified=false for ${verifiedEmail}. Verify the owner Google email before signing in.`,
+          displayText: `[owner/email-not-verified] Firebase Auth reported emailVerified=false for ${verifiedEmail}.`,
+        });
+        return;
+      }
+
+      if (profile.role !== 'admin') {
+        await logoutUser();
+        setAuthError({
+          code: 'owner/role-not-admin',
+          rawMessage: `Profile role resolved to "${profile.role}" instead of "admin".`,
+          displayText: `[owner/role-not-admin] Profile role resolved to "${profile.role}" instead of "admin".`,
+        });
+        return;
+      }
+
       onOwnerAuthenticated(profile);
     } catch (err) {
-      const code = (err as { code?: string })?.code || '';
-      if (code === 'auth/popup-closed-by-user') {
-        setError('Google Sign-In window was closed before completing login.');
-      } else {
-        setError('Owner Google Sign-In failed. Please try again.');
-      }
+      setAuthError(formatFirebaseAuthError(err, getAuthContext()));
     } finally {
       setBusy(false);
     }
@@ -84,17 +113,25 @@ export const OwnerLoginView: React.FC<OwnerLoginViewProps> = ({
 
   const handleEmailOwnerLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setAuthError(null);
     setInfoMsg('');
 
     const cleanEmail = email.trim().toLowerCase();
     if (cleanEmail !== ADMIN_EMAIL) {
-      setError(`Only the authorized owner email (${ADMIN_EMAIL}) is permitted on /owner-login.`);
+      setAuthError({
+        code: 'owner/unauthorized-email',
+        rawMessage: `Only the authorized owner email (${ADMIN_EMAIL}) is permitted on /owner-login.`,
+        displayText: `[owner/unauthorized-email] Only the authorized owner email (${ADMIN_EMAIL}) is permitted on /owner-login.`,
+      });
       return;
     }
 
     if (!password) {
-      setError('Please enter your owner account password.');
+      setAuthError({
+        code: 'owner/missing-password',
+        rawMessage: 'Please enter your owner account password.',
+        displayText: '[owner/missing-password] Please enter your owner account password.',
+      });
       return;
     }
 
@@ -103,34 +140,31 @@ export const OwnerLoginView: React.FC<OwnerLoginViewProps> = ({
       const profile = await loginWithEmail(cleanEmail, password);
       const fbUser = auth.currentUser;
       if (!fbUser?.emailVerified) {
-        setError(
-          'Your email is not verified in Firebase Auth yet. Click "Continue with Owner Google Account" above for instant verified access, or verify your email link.'
-        );
+        setAuthError({
+          code: 'owner/email-not-verified',
+          rawMessage:
+            'Your email is not verified in Firebase Auth yet. Click "Continue with Owner Google Account" above for instant verified access, or verify your email link.',
+          displayText:
+            '[owner/email-not-verified] Your email is not verified in Firebase Auth yet.',
+        });
         return;
       }
       onOwnerAuthenticated(profile);
     } catch (err) {
-      const code = (err as { code?: string })?.code || '';
-      if (code === 'auth/operation-not-allowed') {
-        setError('Email/Password sign-in is disabled in Firebase Console. Use "Continue with Owner Google Account" above.');
-      } else if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
-        setError('Invalid owner email or password. You can also sign in instantly with your Owner Google Account above.');
-      } else {
-        setError('Owner authentication failed. Please use your authorized Owner Google Account.');
-      }
+      setAuthError(formatFirebaseAuthError(err, getAuthContext()));
     } finally {
       setBusy(false);
     }
   };
 
   const handleResendVerification = async () => {
-    setError('');
+    setAuthError(null);
     setInfoMsg('');
     try {
       await sendVerificationForCurrentUser();
       setInfoMsg(`Verification email sent to ${ADMIN_EMAIL}. Once verified, reload or sign in via Google.`);
-    } catch {
-      setError('Unable to send verification email right now. Please sign in with Google instead.');
+    } catch (err) {
+      setAuthError(formatFirebaseAuthError(err, getAuthContext()));
     }
   };
 
@@ -187,7 +221,7 @@ export const OwnerLoginView: React.FC<OwnerLoginViewProps> = ({
                   type="button"
                   onClick={async () => {
                     await logoutUser();
-                    setError('');
+                    setAuthError(null);
                     setInfoMsg('Signed out previous account. Sign in as Owner below.');
                   }}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-200 text-[11px] font-semibold cursor-pointer"
@@ -199,10 +233,26 @@ export const OwnerLoginView: React.FC<OwnerLoginViewProps> = ({
             </div>
           )}
 
-          {error && (
-            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{error}</span>
+          {authError && (
+            <div
+              role="alert"
+              data-testid="owner-auth-error"
+              className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs space-y-1.5"
+            >
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                <div className="space-y-1 min-w-0">
+                  <p className="font-mono text-[11px] font-bold text-rose-900 dark:text-rose-100 break-all">
+                    Error Code: {authError.code}
+                  </p>
+                  <p className="leading-relaxed break-words">{authError.rawMessage}</p>
+                  {authError.hint && (
+                    <p className="text-[11px] text-rose-700 dark:text-rose-300 leading-relaxed break-words">
+                      {authError.hint}
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
           )}
 

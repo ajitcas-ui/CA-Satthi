@@ -6,7 +6,7 @@ import {
   validateOwnerTokenClaims,
 } from './ownerAuth';
 
-const TEST_PROJECT = 'gen-lang-client-0883887437';
+const TEST_PROJECT = 'ca-satthi';
 const NOW = 1_800_000_000;
 
 test('parseBearerToken extracts Bearer JWT safely', () => {

@@ -52,6 +52,7 @@ import {
   StudentProgressSnapshot,
 } from '../types';
 import { computeSubscriptionExpiry } from '../utils/membershipRules';
+import { resolveGoogleUserEmail } from '../utils/firebaseAuthError';
 
 export const ADMIN_EMAIL = 'ajitsinghca9@gmail.com';
 export const COMMON_GROUP_ID = 'grp_ca_saathi_common';
@@ -122,7 +123,7 @@ export async function registerWithEmail(params: {
 }
 
 async function ensureAuthorizedUserProfile(fbUser: FirebaseUser): Promise<UserProfile> {
-  const emailClean = (fbUser.email || '').toLowerCase().trim();
+  const emailClean = resolveGoogleUserEmail(fbUser);
   const isVerifiedOwner = emailClean === ADMIN_EMAIL && fbUser.emailVerified;
   const todayIso = new Date().toISOString().split('T')[0];
 
@@ -214,8 +215,17 @@ export async function loginWithEmail(email: string, password: string): Promise<U
   return ensureAuthorizedUserProfile(credential.user);
 }
 
-export async function loginWithGoogle(): Promise<UserProfile> {
+export async function loginWithGoogle(options?: { loginHint?: string }): Promise<UserProfile> {
   const provider = new GoogleAuthProvider();
+  provider.addScope('email');
+  provider.addScope('profile');
+  const customParams: Record<string, string> = {
+    prompt: 'select_account',
+  };
+  if (options?.loginHint) {
+    customParams.login_hint = options.loginHint;
+  }
+  provider.setCustomParameters(customParams);
   const credential = await signInWithPopup(auth, provider);
   return ensureAuthorizedUserProfile(credential.user);
 }
