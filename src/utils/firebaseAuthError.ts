@@ -11,6 +11,36 @@ export interface FirebaseAuthUserLike {
   providerData?: Array<{ providerId?: string | null; email?: string | null } | null>;
 }
 
+export interface FirebaseCodedError extends Error {
+  code: string;
+}
+
+export function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  errorCode: string,
+  message: string
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      const timeoutError = new Error(message) as FirebaseCodedError;
+      timeoutError.code = errorCode;
+      reject(timeoutError);
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 export function resolveGoogleUserEmail(fbUser: FirebaseAuthUserLike | null | undefined): string {
   if (!fbUser) return '';
   const direct = (fbUser.email || '').trim().toLowerCase();
@@ -31,28 +61,120 @@ export function resolveGoogleUserEmail(fbUser: FirebaseAuthUserLike | null | und
   return '';
 }
 
+function unwrapFirestoreErrorJson(message: string): {
+  innerMessage: string;
+  path?: string;
+  operationType?: string;
+} {
+  const prefix = 'Firestore Error:';
+  const trimmed = message.trim();
+  const candidate = trimmed.startsWith(prefix) ? trimmed.slice(prefix.length).trim() : trimmed;
+  if (!candidate.startsWith('{')) {
+    return { innerMessage: message };
+  }
+  try {
+    const parsed = JSON.parse(candidate) as {
+      error?: unknown;
+      path?: unknown;
+      operationType?: unknown;
+    };
+    if (typeof parsed.error === 'string' && parsed.error.trim().length > 0) {
+      return {
+        innerMessage: parsed.error.trim(),
+        path: typeof parsed.path === 'string' ? parsed.path : undefined,
+        operationType: typeof parsed.operationType === 'string' ? parsed.operationType : undefined,
+      };
+    }
+  } catch {
+    // not JSON, fall back to raw message
+  }
+  return { innerMessage: message };
+}
+
+function inferFirestoreCodeFromMessage(rawCode: string, message: string): string | null {
+  const normalizedCode = rawCode.trim().toLowerCase();
+  const lowerMsg = message.toLowerCase();
+
+  if (normalizedCode === 'firestore/timeout' || normalizedCode === 'deadline-exceeded') {
+    return 'firestore/timeout';
+  }
+  if (
+    normalizedCode === 'firestore/unavailable' ||
+    normalizedCode === 'unavailable' ||
+    normalizedCode === 'firestore/offline'
+  ) {
+    return 'firestore/unavailable';
+  }
+  if (normalizedCode === 'firestore/permission-denied' || normalizedCode === 'permission-denied') {
+    return 'firestore/permission-denied';
+  }
+  if (normalizedCode === 'firestore/not-found' || normalizedCode === 'not-found') {
+    return 'firestore/not-found';
+  }
+  if (normalizedCode.startsWith('firestore/')) {
+    return normalizedCode;
+  }
+
+  if (
+    lowerMsg.includes('client is offline') ||
+    lowerMsg.includes('failed to get document because the client is offline') ||
+    lowerMsg.includes('could not reach cloud firestore backend') ||
+    lowerMsg.includes('service_disabled') ||
+    lowerMsg.includes('firestore.googleapis.com')
+  ) {
+    return 'firestore/unavailable';
+  }
+  if (lowerMsg.includes('timed out')) {
+    return 'firestore/timeout';
+  }
+  if (lowerMsg.includes('missing or insufficient permissions') || lowerMsg.includes('permission-denied')) {
+    return 'firestore/permission-denied';
+  }
+  return null;
+}
+
+export function normalizeFirestoreError(err: unknown): FirebaseCodedError {
+  const { code, rawMessage } = extractFirebaseAuthError(err);
+  const normalized = new Error(rawMessage) as FirebaseCodedError;
+  normalized.code = code;
+  return normalized;
+}
+
 export function extractFirebaseAuthError(err: unknown): { code: string; rawMessage: string } {
   if (!err || typeof err !== 'object') {
+    const raw = typeof err === 'string' && err.trim() ? err.trim() : 'Unexpected authentication error.';
+    const unwrapped = unwrapFirestoreErrorJson(raw);
+    const inferred = inferFirestoreCodeFromMessage('', unwrapped.innerMessage);
     return {
-      code: 'auth/unknown-error',
-      rawMessage: typeof err === 'string' && err.trim() ? err : 'Unexpected authentication error.',
+      code: inferred || 'auth/unknown-error',
+      rawMessage: unwrapped.innerMessage,
     };
   }
 
   const record = err as { code?: unknown; message?: unknown };
-  const rawMessage =
+  const initialMessage =
     typeof record.message === 'string' && record.message.trim().length > 0
       ? record.message.trim()
       : 'Unexpected Firebase authentication error.';
+
+  const unwrapped = unwrapFirestoreErrorJson(initialMessage);
+  const rawMessage = unwrapped.path
+    ? `${unwrapped.innerMessage} (${unwrapped.operationType || 'op'}: ${unwrapped.path})`
+    : unwrapped.innerMessage;
 
   let code =
     typeof record.code === 'string' && record.code.trim().length > 0 ? record.code.trim() : '';
 
   if (!code) {
-    const embeddedCodeMatch = /\((auth\/[a-z0-9-]+)\)/i.exec(rawMessage);
+    const embeddedCodeMatch = /\(((?:auth|firestore)\/[a-z0-9-]+)\)/i.exec(rawMessage);
     if (embeddedCodeMatch?.[1]) {
       code = embeddedCodeMatch[1];
     }
+  }
+
+  const firestoreCode = inferFirestoreCodeFromMessage(code, unwrapped.innerMessage);
+  if (firestoreCode) {
+    code = firestoreCode;
   }
 
   return {
@@ -101,6 +223,26 @@ export function formatFirebaseAuthError(
       hint =
         'Firebase Auth encountered an internal/OAuth configuration error. Verify Authorized Domains and OAuth consent/client settings in Firebase Console.';
       break;
+    case 'firestore/unavailable':
+      hint = `Cloud Firestore database "(default)"${
+        projectId ? ` in Firebase project "${projectId}"` : ''
+      } is offline, disabled, or not yet created. Enable Cloud Firestore in Firebase Console → Build → Firestore Database and deploy firestore.rules.`;
+      break;
+    case 'firestore/timeout':
+      hint = `Cloud Firestore verification timed out${
+        projectId ? ` for project "${projectId}"` : ''
+      }. Confirm Cloud Firestore database "(default)" is enabled in Firebase Console and reachable from your network.`;
+      break;
+    case 'firestore/permission-denied':
+      hint = `Firestore security rules rejected this request${
+        projectId ? ` on project "${projectId}"` : ''
+      }. Deploy firestore.rules to "${projectId || 'ca-satthi'}" and verify owner email authorization.`;
+      break;
+    case 'firestore/not-found':
+      hint = `The Firestore database or user document was not found${
+        projectId ? ` in project "${projectId}"` : ''
+      }.`;
+      break;
     default:
       break;
   }
@@ -114,3 +256,4 @@ export function formatFirebaseAuthError(
     displayText,
   };
 }
+

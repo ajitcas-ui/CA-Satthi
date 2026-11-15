@@ -52,7 +52,8 @@ import {
   StudentProgressSnapshot,
 } from '../types';
 import { computeSubscriptionExpiry } from '../utils/membershipRules';
-import { resolveGoogleUserEmail } from '../utils/firebaseAuthError';
+import { normalizeFirestoreError, withTimeout } from '../utils/firebaseAuthError';
+import { resolveAuthorizedUserProfile } from '../utils/ownerProfileSync';
 
 export const ADMIN_EMAIL = 'ajitsinghca9@gmail.com';
 export const COMMON_GROUP_ID = 'grp_ca_saathi_common';
@@ -123,90 +124,34 @@ export async function registerWithEmail(params: {
 }
 
 async function ensureAuthorizedUserProfile(fbUser: FirebaseUser): Promise<UserProfile> {
-  const emailClean = resolveGoogleUserEmail(fbUser);
-  const isVerifiedOwner = emailClean === ADMIN_EMAIL && fbUser.emailVerified;
-  const todayIso = new Date().toISOString().split('T')[0];
-
-  let profile: UserProfile | null = null;
-  try {
-    profile = await getUserProfile(fbUser.uid);
-  } catch {
-    profile = null;
-  }
-
-  if (!profile) {
-    const newProfile: UserProfile = {
-      id: fbUser.uid,
-      name: fbUser.displayName || (isVerifiedOwner ? 'Ajeet Patel (Owner)' : 'CA Aspirant'),
-      email: emailClean,
-      role: isVerifiedOwner ? 'admin' : 'student',
-      targetAttempt: 'January 2027',
-      targetYear: 2027,
-      city: 'India',
-      phone: '',
-      bio: isVerifiedOwner
-        ? 'CA Saathi Platform Owner & Super Admin.'
-        : 'CA Foundation Aspirant with CA Saathi.',
-      avatar: isVerifiedOwner ? '👨‍🏫' : '🎓',
-      joinedGroupIds: [COMMON_GROUP_ID],
-      bookmarkedPostIds: [],
-      blockedUserIds: [],
-      privacyHideCity: false,
-      privacyHideAttempt: false,
-      membershipStatus: isVerifiedOwner ? 'active' : 'unpaid',
-      hasPaidPass: isVerifiedOwner,
-      dailyGoalMinutes: 120,
-      studyMinutesTotal: 0,
-      studyStreak: 0,
-      canUploadNotes: isVerifiedOwner,
-      lastActiveDate: todayIso,
-      createdAt: todayIso,
-    };
-
-    try {
-      await setDoc(doc(db, 'users', fbUser.uid), newProfile);
-    } catch (error) {
-      if (!isVerifiedOwner) {
-        handleFirestoreError(error, OperationType.WRITE, `users/${fbUser.uid}`);
-      }
+  return resolveAuthorizedUserProfile(
+    {
+      uid: fbUser.uid,
+      email: fbUser.email,
+      emailVerified: fbUser.emailVerified,
+      displayName: fbUser.displayName,
+      providerData: fbUser.providerData,
+    },
+    {
+      readProfile: async (uid) => {
+        const snap = await getDoc(doc(db, 'users', uid));
+        return {
+          exists: snap.exists(),
+          data: snap.exists() ? (snap.data() as UserProfile) : undefined,
+        };
+      },
+      createProfile: async (uid, newProfile) => {
+        await setDoc(doc(db, 'users', uid), newProfile);
+      },
+      syncOwnerFields: async (uid, updates) => {
+        await updateDoc(doc(db, 'users', uid), updates);
+      },
+    },
+    {
+      adminEmail: ADMIN_EMAIL,
+      commonGroupId: COMMON_GROUP_ID,
     }
-    return newProfile;
-  }
-
-  if (isVerifiedOwner) {
-    const needsOwnerSync =
-      profile.role !== 'admin' ||
-      profile.hasPaidPass !== true ||
-      profile.membershipStatus !== 'active';
-
-    const upgraded: UserProfile = {
-      ...profile,
-      email: emailClean,
-      role: 'admin',
-      hasPaidPass: true,
-      membershipStatus: 'active',
-      isSuspended: false,
-      lastActiveDate: todayIso,
-    };
-
-    if (needsOwnerSync) {
-      try {
-        await updateDoc(doc(db, 'users', fbUser.uid), {
-          role: 'admin',
-          hasPaidPass: true,
-          membershipStatus: 'active',
-          isSuspended: false,
-          lastActiveDate: todayIso,
-          updatedAt: new Date().toISOString(),
-        });
-      } catch {
-        // Non-blocking fallback: still return verified owner profile
-      }
-    }
-    return upgraded;
-  }
-
-  return profile;
+  );
 }
 
 export async function loginWithEmail(email: string, password: string): Promise<UserProfile> {
@@ -244,7 +189,12 @@ export async function logoutUser(): Promise<void> {
   const uid = auth.currentUser?.uid;
   if (uid) {
     try {
-      await deleteDoc(doc(db, 'studyPresence', uid));
+      await withTimeout(
+        deleteDoc(doc(db, 'studyPresence', uid)),
+        2000,
+        'firestore/timeout',
+        'Timed out cleaning up study presence on sign out.'
+      );
     } catch {
       // ignore offline/cleanup issues on logout
     }
@@ -254,13 +204,18 @@ export async function logoutUser(): Promise<void> {
 
 export async function getUserProfile(userId: string): Promise<UserProfile | null> {
   try {
-    const snap = await getDoc(doc(db, 'users', userId));
+    const snap = await withTimeout(
+      getDoc(doc(db, 'users', userId)),
+      8000,
+      'firestore/timeout',
+      'Timed out while fetching user profile from Cloud Firestore.'
+    );
     if (snap.exists()) {
       return snap.data() as UserProfile;
     }
     return null;
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, `users/${userId}`);
+    handleFirestoreError(normalizeFirestoreError(error), OperationType.GET, `users/${userId}`);
     return null;
   }
 }
